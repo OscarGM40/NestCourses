@@ -1,0 +1,402 @@
+  		NEST - DESARROLLO BACKEND ESCALABLE CON NODE BY FERNANDO HERRERA
+
+Nest es un framework de Node para el backend.Nest es conocido por:
+1- ser expandible: su estructura modular permite usarse junto con otras librerias
+2- versátil: ya que brinda la columna vertebral de todo tipo de aplicaciones back
+3- progresivo: porque nos permite usar lo último de JS y nos ofrece soluciones robustas.
+
+Como conceptos core tengo: guards,interceptors,pipes,decorators,modules,controllers,services,gateways y exception filters.
+Durante el curso desplegaré varios backends,usaré WebSockets,JWT,Docker,carga de archivos,documentación,validaciones,entidades para SQL y esquemas para No-SQL...
+Todo ello con Typescript,el amigo de los niños.
+
+Nest está fuertemente ligado a Typescript,es bastante raro usar JS.Trabaja con clases,lo que hace que sea fácil usar principios SOLID por ello.
+Usaremos PostgreSQL y Mongo como DB.
+
+			VIDEO 05 INSTALACIONES NECESARIAS
+
+Descargar VScode,Postman(está en Beta que Postman pueda probar WebSockets).
+Vamos a ocupar algunos gestores para ver DBs.Usaremos TablePlus(en el tier free solo se pueden tener tres pestañas abiertas).Me permitira trabajar con Postgre y Mongo,aunque puedo usar PgAdmin y Robo3T o MongoCompass.
+También se necesita Git,y se recomienda usar NVM.
+Vamos a ocupar algunos gestores para ver DBs.Usaremos TablePlus(en el tier free solo se pueden tener tres pestañas abiertas).Me permitira trabajar con Postgre y Mongo,aunque puedo usar PgAdmin y Robo3T o MongoCompass.
+
+Se recomienda usar Node16 mediante NVM y se necesitará Git tmb.Tmb se recomienda instalar yarn:
+npm install -g yarn
+También necesitaré docker en el SO
+Usaremos la imagen Mongo5.0 y Postgre14
+
+También provee un PDF realmente útil que dejo en el repo y en el SO.
+
+		SECCION 02 CONCEPTOS FUNDAMENTALES DE TYPESCRIPT PARA NEST
+
+Realmente es necesaria esta sección,ya que veré inyección de dependencias,decoradores,etc que necesitaré despues,tanto para Nest como para desarrollo personal.
+
+Aquí veremos:
+1- Tipos básicos
+2- Interfaces
+3- Implementaciones
+3- Clases
+4- Patrón adaptador
+5- Principio de sustitución de Liskov
+6- Inyección de dependencias
+7- Getters
+8- Métodos asíncronos
+9- Decoradores de clases y métodos
+
+Es importante recalcar que esto no es una introducción a TypeScript, son conceptos que necesito exponer porque los usaremos en el curso de Nest.
+
+		VIDEO 09-10 PREPARACION PROYECTO Y TIPOS Y BASES SOBRE MODULOS EN TS
+
+Lo primero será crear un proyecto con vite + yarn:
+> yarn create vite
+TIP: vite proporciona HOT REPLACING MODULE(reemplazo de modulos en caliente)
+NOTA: con npm simplemente seria npm create vite ->
+>npm create vite
+
+Fijate que Vite(y los demás) ya vienen preparados para trabajar con módulos.La consecuencia directa de esto es que al crear un archivo tengo que exportar algo desde él.
+NOTA: cuando importo una constante,JS va a leer todo el archivo.Si me dejo un console.log en el archivo B e importo una constante del mismo en el archivo A se va a ejecutar ese console.log porque JS lee todo el file al buscar esa importación(interesante).Es por esto que hay que tener mucho cuidado con los imports.Si me traigo varios elementos de un file JS solo lo lee una vez,es por cada import.
+
+			VIDEO 11 TYPE SAFETY
+
+Al trabajar con Typescript,o cualquier otro lenguaje estático tendré type safety.Si defino una variable como string no podré asignarla un true,por ejemplo:
+let name = 'Fernando';
+name = true XX <- boolean no es asignable al tipo string
+
+			VIDEO 12 OBJETOS E INTERFACES
+
+TIP: Typescript simplemente transpilará el código a Javascript.Si por ejemplo intento meter un string a un arreglo de numbers veré un error en el IDE,pero no impedirá la transpilación.Aunque esto se puede cambiar.
+
+export const pokemonIds = [1,20,30,34,66]
+
+pokemonIds.push('sadlfk')
+
+En typescript nosotros podemos obligar a que un objeto luzca de determinada manera creando una interfaz.Usualmente van con CamelCase:
+
+interface Pokemon {
+  id: number;
+  name: string;
+}
+
+export const bulbasaur: Pokemon = {
+  id: 1;
+  name: 'bulbasaur' <- ya no puedo añadirle más propiedades
+}
+
+Las interfaces son algo básico en Typescript.
+NOTA: no es lo mismo declarar una propiedad opcional con el operador ? que decirla que es de tipo undefined(pero obligatoria):
+
+interface Pokemon {
+  id: number;
+  name: string;
+  age: number | undefined; <- age siempre debe venir
+}
+
+export const bulbasaur:Pokemon = { <- da error pues le falta age
+  id: 1,
+  name: 'bulbasaur',
+}
+Siempre que una propiedad pueda venir o no debo usar la propiedad como opcional.
+Una interfaz se difiere de una clase en que no se puede instanciar,sólo vale para tipar.Recuerda que compilan a 0 bytes.
+
+				VIDEO 13 TIPOS EN LOS ARREGLOS
+
+Si declaro un arreglo de esta forma:
+export const pokemonIds = []; 
+veré que pone que es de tipo never[]
+
+NOTA: un arreglo de tipo never[] es que no tiene tipado.Esto no impedirá que le pueda añadir de todo,ya que no lo tipé, aunque dará el error de que un arreglo de tipo never[] no puede añadirsele un number o un string,etc...
+
+Usualmente voy a querer que un arreglo sea de un tipo concreto,esto es lo más normal y por lo que se usa typescript.
+export const pokemons: Pokemon [] = [];
+
+NOTA: si intento asignar a un arreglo un tipo que no sea un arreglo veré el mismo error(type never cannot be assigned to...):
+export const pokemons: Pokemon = []; <- tiene que ser Pokemon[] el tipado o será un never
+
+			VIDEO 14 CLASES  Y FORMA ABREVIADA
+
+De nuevo si exporto una clase en un file se considerará un módulo y se quitará el error:
+export class Pokemon {}
+Normalmente una clase es la representación de un objeto en la vida real(POO)
+
+export class Pokemon {
+  public id: number;
+  public name: string;
+
+  constructor(id: number, name: string) {
+    this.id = id;
+    this.name = name;
+    console.log('construyendo el objeto');
+  }
+  
+}
+
+export const charmander = new Pokemon(1,'charmander')
+
+TIP: recuerda que en el constructor puedo ejecutar cualquier tipo de lógica,no sólo la de iniciar las propiedades.
+
+IMPORTANTE: la forma anterior es la forma tradicional de definir clases de forma explicita,pero hay una forma corta para evitar tanta asignacion,hoy en dia es lo más común.Para ello elimino la declaración de las propiedades y simplemente agrego el modificador de acceso en el constructor:
+
+class Pokemon {
+  constructor( public readonly id:number, public name:string) {
+}
+Fijate que eliminé tanto las dos lineas de la definición como las otras dos de la asignación dentro del constructor.Además,el id lo queremos constante.
+
+				VIDEO 15 GETTERS, MÉTODOS Y THIS
+
+Para crear un get se usa la palabra reservada get + nombre_del_getter.Recuerda que para acceder a la instancia de la clase necesito this:
+export class Pokemon{
+  constructor(public readonly id,public name){}
+
+ get imageUrl():string {
+    return `https://pokemon.com/${this.id}` 
+  }
+}
+
+IMPORTANTE: a la hora de acceder al getter es como una propiedad(no como método)
+Esto cambia en Typescript de por ejemplo Java o C#.
+const charmander = new Pokemon(1,'charmander');
+console.log(charmander.imageUrl)<- ojo ,que un getter es una propiedad en TS
+
+ En cuanto a métodos de clase,es como Java,pueden ser estáticos,publicos(por defecto o privados)
+  scream(){
+    console.log(`${this.name.toLocaleUpperCase()}!!!`);
+    this.speak()
+  }
+  private speak():void {
+    console.log(`${this.name},${this.name}`);
+  }
+Lo más importante de este video es memorizar que usar la forma abreviada de definir propiedades de clase es muy común y lo veré y usaré continuamente.
+
+				VIDEO 16 MÉTODOS ASÍNCRONOS
+
+Cuando yo me encuentro dentro de una función asíncrona(una función es asíncrona cuando tiene la palabra async) puedo(fijate que es puedo),puedo esperar la ejecución de la promesa usando await
+
+async getMoves() {
+ // imagina que lo que tenga en esta linea es asincrono y lo quiero saber para la siguiente linea.Por ejemplo:
+const resp = axios.get('https://pokeapi.co/api/v2/pokemon/4')
+return resp; <- esto es una Promise<pending>
+	
+Obviamente la solución es usar await.Await solo puede usarse dentro de un async.
+
+Además,es fundamental tipar la response,mediante Quicktype ya sea en el navegador o con su extension Paste JSON as Code(recuerda que necesita un JSON válido en el clipboard del sistema):
+
+  async getMoves():Promise<Move[]> {
+    const resp = await axios.get<PokeapiResponse>(`https://pokeapi.co/api/v2/pokemon/4`); // aqui lo  mismo,si lo dejo asi resp es una promesa
+    console.log(resp.data)
+    return resp.data.moves;
+  }
+
+			VIDEO 18 INYECCIÓN DE DEPENDENCIAS
+
+Nest trabaja fuertemente con los principios SOLID y DRY.La inyección de dependencias no es más que proporcionar una dependencia a la hora de construir una clase(cuando se construya un objeto de esa clase se provee una instancia de otra).
+Recuerda que Fernando tiene un curso de principios SOLID(debería hacerlo).
+
+Como su nombre indica,la inyección de dependencias es añadir una dependencia a una clase,para asi evitar que esa clase tenga que desarrollar esa funcionalidad a la que accede mediante esa dependencia(instancia de otra clase)
+
+Ahora mismo,nuestra clase Pokemon tiene una dependencia oculta sobre axios.Nosotros realmente deberiamos ser capaces de cambiar axios por fetch,por ejemplo,desde fuera de la clase,sin que esta cambie.
+
+Esto lo arreglaremos inyectando una dependencia que pueda realizar peticiones http.Lo primero que hay que hacer es crear una clase que permita ser inyectada en otra.Esta clase será una clase adaptadora,es una convención llamarla xxx.adapter.ts
+
+IMPORTANTE: la clase que reciba la inyección recibirá una instancia del tipo de la clase Adaptadora:
+
+  constructor(
+    public readonly id: number,
+    public name: string, 
+    // Todo: inyectar dependencias
+    private readonly http:PokeApiAdapter
+  ) {}
+
+Fijate también que esa instancia debería venir en Singleton en toda la app.Con lo que ya estoy viendo dos patrones,el adapter y el singleton:
+
+const pokeApi = new PokeApiAdapter();
+export const charmander = new Pokemon(4, "Charmander",pokeApi);
+
+Además,de momento perdí el tipado,pero lo recuperaremos.
+
+				VIDEO 19 GENERICOS + SUSTITUCION DE LISKOV
+
+De nuevo,Nest recomienda fuertemente trabajar con principios SOLID y recomienda que sea asi.
+Bien,una primera solución es bien sencilla,y es usando programación genérica:
+ 
+async get<T>(url:string){
+    const {data} =  await this.axios.get<T>(url)
+    return data;
+ }
+
+NOTA:declarar una funcion como async await no hace que al llamarla deje de tener que usar async/await:
+async get<T> xxx(url:string){
+  return await this.axios.get<T>(url
+}
+ahora,al llamarla de nuevo se volvió una Promise
+
+async callingGet(){
+  return await get('http...') <- de nuevo tengo que usar async/await
+Esto debo memorizarlo
+
+Principio de sustitución de Liskov: nuestra inyección de dependencia no debería estar atada a una implementación/concrección/clase, sino a una interfaz que me deje intercambiar implementaciones.
+Imagina, por ejemplo, que quiero usar una inyección sobre la API fetch cuya clase lucirá asi:
+
+export class PokeApiFetchAdapter {
+
+  async get<T>(url:string): Promise<T>{
+    const resp = await fetch(url);
+    // lamentablemente no puede hacerse resp.json<T>(),luego hay que tipar la constante donde almacene el retorno del json()
+    const data: T = await resp.json();
+    return data;
+  }
+}
+
+Tal como tengo el código,estoy atado a usar la implementación de axios(ya que trabajé en una implementación)
+Realmente deberia poder intercambiar las instancias de fetch y axios,para ello usaremos el principio de sustitución de Liskov.
+
+			VIDEO 20 RESOLVIENDO EL PRINCIPIO DE SUSTITUCION DE LISKOV
+
+Una solución sería usar una clase abstracta,pero apenas se usan,se usan interfaces.Obviamente tiene que poder heredarse.Bien,simplemente es crear la interfaz con los métodos abstractos:
+
+export interface HttpAdapter {
+  get<T>(url: string): Promise<T>;
+}
+
+
+export class PokeApiFetchAdapter implements HttpAdapter {
+  private static instance: PokeApiFetchAdapter;
+
+  private constructor() {}
+
+  public static getInstance(): PokeApiFetchAdapter {
+    if (!this.instance) {
+      this.instance = new PokeApiFetchAdapter();
+    }
+    return this.instance;
+  }
+
+  async get<T>(url: string): Promise<T> {
+    console.log('fetching with fetch API')
+    const resp = await fetch(url);
+    // lamentablemente no puede hacerse resp.json<T>(),luego hay que tipar la constante donde almacene el retorno del json()
+    const data: T = await resp.json();
+    return data;
+  }
+}
+
+export class PokeApiAxiosAdapter implements HttpAdapter {
+  private static instance: PokeApiAxiosAdapter;
+  private readonly axios = axios;
+
+  private constructor() {}
+
+  public static getInstance(): PokeApiAxiosAdapter {
+    if (!this.instance) {
+      this.instance = new PokeApiAxiosAdapter();
+    }
+    return this.instance;
+  }
+
+  async get<T>(url: string) {
+    console.log('fetching with axios library')
+    const { data } = await this.axios.get<T>(url);
+    return data;
+  }
+
+}
+
+La inyección de dependencias nuevamente no es más que a una clase añadirle una dependencia(siempre es una Interfac,clase o clase abstracta).
+Aparte de esto los decoradores también son sumamente comunes en Nest
+
+					VIDEO 21 DECORADORES- DECORADOR DE CLASE
+
+Los decoradores no son más que simples funciones que 'decoran' a otras funciones,clases o propiedades(para Nest será lo segund),aumentando la funcionalidad de lo que 'decore'.La sintaxis es @FuncDecoradora(),no cambia de otros lenguajes
+
+NOTA: hay que establecer la propiedad experimentalDecorators en el tsconfig o jsconfig(si esto en JS) para poder usar decoradores.Obviamente en Nest no lo necesito,pero ahora mismo estamos en vite y typescript simplemente.
+
+function MyDecorator(){
+  return (target:Funcion) => {
+    console.log(target) <- el target es lo que se decore,en este caso la clase
+  }
+}
+
+
+@MyDecorator
+export class Pokemon {}
+
+TIP: cuando yo defina un decorador de clase el decorador va a tener acceso a la definición de la clase y va a poder añadir,extender,reducir,bloquear,eliminar funcionalidades o incluso sobreescribirla al completo.
+Y si fuera un decorador de método obviamente tiene acceso a la definición del método, y lo mismo si fuera un decorador de propiedad tendrá acceso a la definición de la propiedad
+
+IMPORTANTE: en la definición de la lógica del retorno de un decorador de clase puedo devolver una Clase totalmente distinta,y esa clase pisará al completo a la que decore:
+
+class NewPokemon {
+  constructor(public readonly id: number, public name: string) {}
+
+  scream() {
+    console.log(`NO QUIERO!!!`);
+  }
+
+  speak() {
+    console.log(`no quiero hablar`);
+  }
+}
+
+const MyDecorator = () => {
+  return (target: Function) => {
+    // en el retorno de un decorador yo puedo devolver otra clase distinta 
+    return NewPokemon;
+  }
+}
+
+@MyDecorator()
+export class Pokemon {
+  constructor(public readonly id: number, public name: string) {}
+
+  scream() {
+    console.log(`${this.name.toUpperCase()}!!!`);
+  }
+
+  speak() {
+    console.log(`${this.name},${this.name}`);
+  }
+}
+
+export const charmander = new Pokemon(4,'Charmander')
+charmander.scream()
+charmander.speak()
+
+charmander.scream() va a computar al .scream de NewPokemon.Y por esto es tan fácil en Angular cambiar comportamientos mediante un decorador
+Realmente lo que sucede es que al instanciar Pokemon indirectamente se crea una instancia de NewPokemon,nunca se crea la de Pokemon.Obviamente,no se suele pisar al completo una clase.Genial video.
+TIP: dado que el decorador no llevaba argumentos se usó const MyDecorator = () => { return (target:Function) => {} y su correspondiente @MyDecorator().Ese primer parentesis es para pasarle argumentos desde el @Decorator a la funcion.
+
+					VIDEO 22 DECORADOR DE MÉTODO
+ 
+Podemos crear un decorador para un método.Esto me permite acceder a diferentes propiedades que si fuera una clase:
+
+const Deprecated = (feedback:string) => {
+  return (target:any,memberName:string,propertyDescriptor:PropertyDescriptor) => {
+get(){
+  const wrapperFn = (...args:any[]) => {
+    console.warn('Method ${memberName} is deprecated with reason: ${feedback}`);
+    propertyDescriptor.value.apply(this,args)
+  }
+return wrapperFn;
+NOTA: propertyDescriptor me dice si estoy en un método,propiedad o clase.
+
+ya solo falta llamarlo sobre un método
+
+  @Deprecated('debes usar otro método,asinto')
+  scream(){}
+
+				SECCION 03 PRIMEROS PASOS EN NEST
+
+Nest en general está construido sobre Express(también parece que está sobre Fastify).En esta sección hablaremos sobre los building blocks(modulos,controladores y servicios).También veré los building blocks para los Decoradores para los controladores(@Get,@Post...),expectionFilters.
+Veré la diferencia entre un Provider y un servicio.
+
+1- ¿Qué es Nest?
+2- ¿Por qué usarlo?
+3- Explicación sobre cada archivo en un proyecto nuevo de Nest
+4- Core Nest building blocks
+  - Módulos
+  - Controladores (Post, Patch, Get, Delete)
+  - Primeros decoradores
+  - Servicios
+  - Inyección de dependencias
+  - Pipes
+  - Exception Filters
+
+Adicionalmente estaremos creando un Rest Api inicial para ir explicando cada concepto paso a paso.
