@@ -400,3 +400,335 @@ Veré la diferencia entre un Provider y un servicio.
   - Exception Filters
 
 Adicionalmente estaremos creando un Rest Api inicial para ir explicando cada concepto paso a paso.
+
+			VIDEO 27 QUES ES NEST Y PORQUE USARLO
+
+Internamente Nest trabaja con Node,pero bajo la cortina utiliza express por defecto,aunque se puede configurar para que utilize fastify como alternativa.Nest es un marco de trabajo dogmático(opinionated).Esto se puede resumir en que Nest tiene una forma de trabajao especifica.
+Nest puede usarse con Vanilla JS,pero es un standard usar Typescript realmente.
+Al estar en Node tengo todos los paquetes de Node disponibles(más de un millón).
+Recuerda que Nest ofrece una capa de abstracción extra al estar sobre Express
+Nest está fuertemente inspirado en Angular.FH recalca que es impresionante.
+
+Nest tmb ofrece un CLI para crear casi cualquier feature del framework,igual que Angular.
+
+			VIDEO 28-29 INSTALAR NEST-CLI Y GENERAR PROYECTO 
+
+Para instalar el cli de nest:
+npm i -g @nestjs/cli
+NOTA: si bien podria no usar la feature de cli de nest obviamente es mejor usarla,igaul que en angular.
+
+				VIDEO 30 SCAFFOLDING DEL PROYECTO 
+
+En la raiz del proyecto veré el .eslintrc.js para el linter.Fijate que este file a su vez carga el tsconfig.json.También Nest creó el .prettierrc,el cual se va a encargar de usar singlequoutes y trailing commas(viene solo con esas dos rules)
+En el nest-cli.json tengo la configuración de la herramienta cli de Nest
+TIP:en el package.json puedo ver un montón de scripts,algunos incluso usan la libreria rimraf para eliminar un folder.También puedo ver que Nest usa Jest como test runner
+IMPORTANTE: puedo ver que aparte de rimraf Nest viene con RxJs instalado.Genial
+
+NOTA: puedo ver el file tsconfig.build.json con esta configuración:
+{
+  "extends": "./tsconfig.json",
+  "exclude": ["node_modules", "test", "dist", "**/*spec.ts"]
+}
+Este file toma todo lo del tsconfig pero excluye esas carpetas.Es el file que usará Nest al hacer el build y lógicamente,no necesito la carpeta node_modules o los archivos de test cuando sirva la app
+Por último,en el tsconfig.json puedo cambiar algo,como la carpeta de salida,etc.
+
+En cuanto a los folders puedo ver dist,src y test.Dentro de test tengo el file jest-e2e.json con la configuración para el testing endToEnd
+
+Puedo ver que Nest usa supertest para el testing de peticiones.
+
+NOTA: se suele ignorar la carpeta de distribución,en este caso /dist porque se presupone que se va a compilar muchas veces y es inútil darla seguimiento por ello.
+Y los node_modules también se excluyen porque son dependientes al sistema operativo,además de tener muchos files tampoco conviene darles seguimiento si son diferentes por cada sistema operativo.
+
+			VIDEO 31 MODULOS
+
+Lo primero de todo es ver como luce un módulo y que es.En el PDF tengo esta definición para un módulo:
+Module: agrupan y desacoplan un conjunto de funcionalidad específica por dominio(ejemplo auth.module.ts se encargará de todo lo relacionado con la auth)
+
+Si veo uno veré que es una clase con el decorador @Module,el cual pide un objeto con las propiedades imports,exports,controllers y providers,todas ellas arreglos:
+
+import { Module } from '@nestjs/common';
+
+@Module({
+  imports: [],
+  controllers: [],
+  providers: [],
+  exports: [],
+})
+export class AppModule {}
+
+En pocas palabras un modulo es una abstración que hago en la app para agrupar lo que necesite.Puedo crear cuantos quiera
+
+Y si voy al main.ts,que es punto de entrada,veré que hay una función que llamará a un modulo principal,de forma similar a Angular:
+
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  await app.listen(3000);
+}
+bootstrap();
+
+El método NestFactory.create(modulo) crea la app de Nest,aunque le falta el puerto que hay que darselo con listen()
+* Fijate como llama a bootstrap(porque no hace await?)
+En este punto puedo observar que ya sé lo que es un módulo en Nest gracias a Angular
+
+				VIDEO 32 CONTROLADORES
+
+La diferencia entre un controlador,servicio,modulo,etc basicamente va a residir en el decorador.Cada decorador cambia enormemente la funcionalidad de esa clase,igual que en Angular.
+Los controladores controlan la logica en las rutas,recibiendo la solicitud y emitiendo una respuesta.Ahora mismo necesitamos uno,para la ruta /.
+Puedo crear un controlador por cli,o un modulo,servicio,etc:
+>nest -h <- ver la ayuda 
+>nest g mo cars <- generar modulo cars
+* esto actualizará en el modulo general los imports[],y como sirvo el modulo general,serviré este
+>nest g co cars <- generamos un controlador
+
+El controlador es una simple clase, pero tiene el decorador @Controller(string).Si lleva un argumento controlara esa ruta en concreto:
+
+@Controller('cars') <- va a controlar a /cars
+export class CarsController {}
+
+De nuevo,el controlador sólo escucha las peticiones y envia respuestas.
+
+IMPORTANTE: si ahora fuera a localhost:3000/cars no veré nada(veré un 404) ya que la clase no tiene absolutamente nada.Para que devuelva algo tengo que crear un método y anotarlo con @Get() | @Post() etc:
+
+@Controller('cars')
+export class CarsController {
+  @Get()
+  getAllCars() {
+    return ['Toyota', 'Honda'];
+  }
+}
+
+TIP: vamos a desactivar prettier ya que está muy estricto.
+
+				VIDEO 34 OBTENER UN CAR POR ID
+
+Fijate que Nest tiene una capa de manejo de excepciones automática que va a entrar si sucede algun error como llamar a un endpoint que no existe
+Bien,dado que queremos crear la url asi /car/1 si voy al PDF veré que tengo 4 decoradores para extraer información de la request:
+@Param <- obtiene parámetros/segmentos
+@Body <- obtiene el body de la request
+@Query <- obtiene los params del query
+@Res 	<- obtiene la Response(para Express/Fastify) <- ya lo veremos
+
+Con todo esto,tengo que crear otro método:
+
+@Get(':id') <- puedo omitir el segmento o usar ('/:id'),es igual 
+getCarById(@Param('id') id:string) <- si no lo anoto como @Param no sabrá Nest que es el que viene por el segmento adicional
+
+Fijate que es muy parecido a Spring aqui.Recuerda que un Param viene como string,y que Typescript no lo va a convertir aunque lo anote como number:
+ 
+ @Get('/:id')
+  getCarById(@Param('id') id: number){ <- este number es irrelevante
+      return {
+        id
+      }
+  }
+NOTA: Nest tiene una forma de hacer el parseo de los params para cuando necesite que sea un number,por ejemplo
+
+						VIDEO 35 SERVICIOS
+
+En este momento tengo datos en el controlador,como los cars.Esa data no debería estar ahi(aunque normalmente será un consulta a DB que devuelva esa data).
+Esas consultas a la DB no deben estar ahi,deben estar en un servicio
+
+Services: alojan la lógica de negocio de tal manera que sea reutilizable mediante inyección de dependencias.Ejemplo: carsService para todo lo relacionado con un cRUD de cars.
+
+Algo interesante que tiene Nest es que tengo el concepto de Provider y el de Service.Todos los servicios son Providers(pero no todos los Providers son servicios luego Providers es padre de Service).De echo los Services están en la sección de Providers en la doc
+
+NOTA: los Providers son un concepto core en Nest.Muchas de las clases base de Nest pueden ser tratadas como provider(servicios,repositorios,factorias,helpers,...)
+La idea principal de un provider es que pueda ser INYECTADO como dependencia,creandose relaciones entre los objetos y delegando la funcionalidad de "conectarlos" al Nest runtime system.
+
+Asi pues,como todo Service puede ser inyectado es un Provider.Creemos uno,pero sin el file de testing:
+>nest g s cars --no-spec
+
+De nuevo,si miro el servicio veré que no es más que una clase con el decorador @Inyectable(significa que puedo inyectar esta clase):
+
+@Injectable()
+export class CarsService {}
+
+NOTA: aqui Nest si difiere de Angular y no provee el servicio a nivel de app como singleton,sino que lo mete en el providers más cercano:
+
+@Module({
+  controllers: [CarsController],
+  providers: [CarsService], <- recuerda que un service es un provider,asi que tiene sentido que vaya aqui.
+})
+export class CarsModule {}
+
+					VIDEO 36 INYECCIÓN DE DEPENDENCIAS
+
+Simplemente es pasarle la instancia de ese tipo al constructor de la clase que la quiere inyectar.Fijate que ponerlas como readonly realmente es buena idea,ya que no la quiero mutar nunca desde esa clase:
+
+ constructor(private readonly carsService: CarsService) {}
+
+En cuanto Nest cree una instancia del controlador,creará otra del tipo del servicio,ya que asi lo indica el constructor.
+IMPORTANTE: Nest va a usar la misma instancia si inyecto esa misma dependencia en otro constructor,siendo más eficiente el proceso.
+Por defecto está en Singleton,compartiendo la misma instancia,pero se puede cambiar el modo de gestionar la repetición de la inyección de una dependencia.
+
+NOTA: si trato de usar el operador unario sobre algo que no es number lo va a tratar de convertir.Minimo lo va a convertir a NaN(que es un Number,ojo):
+console.log(+"skf") <- NaN <- realmente lo ha convertido a Number,pero a un número no válido
+
+Esto me puede valer para saber si recibo un param válido,filtrando si pasarlo a Number me devuelve un NaN.Fijate que debo saber que un parseo en JS me da éxito o NaN.
+
+					VIDEO 37 PIPES
+
+En este punto es obvio que tal como trabaja Nest tenemos que implementar una validación(de echo tiene pinta que tendré que validar todo). 
+Si el param no es un Number se me sigue devolviendo un status 200.Esto no puede ser,es demasiado prehistoric.
+
+Realmente podriamos hacer algo como if(isNan(Number(id)){ throw ...) pero Nest ya tiene contemplado esto como un building block.Son los pipes.
+
+Pipes: me ayudan a transformar la data recibida en la request(y en otros lugares,tmb,no solo la request),para asegurar un tipo,valor o que una instancia cumple determinado criterio (ejemplo:transformar a Number,validar rangos,propiedades,etc...
+Es obviamente lo que queremos.
+NOTA: Nest ya viene con algunos Pipes por defecto(ValidationPipe,ParseBoolPipe,ParseFloatPipe,ParseIntPipe,ParseArrayPipe,ParseUUIDPipe,...)
+
+Y fijate que el segundo argumento de @Param es una coleccion de pipes:
+
+  @Get('/:id')
+  getCarById(@Param('id',ParseIntPipe) id: number) {
+    console.log({id})
+    return this.carsService.findOneById(id)
+    };
+Y no sólo lo trae convertido,sino que si ahora apunto a /car/3gg por ejemplo,me da un 400 ya,en vez del 200.Obviamente podremos personalizar el message de error y el statusCode,pero ya está controlando Nest de forma básica el error.
+
+IMPORTANTE: Nest tiene una capa de manejo de excepciones(exception zone) ya por defecto,que abarca los guards,interceptors(controla la entrada y salida del interceptor),pipes,controllers,decorators(es decir que todos estos controla de forma básica los errores).
+No entran en esta capa los middlewares 
+
+				VIDEO 38 EXCEPTION FILTERS
+
+Este es otro building block que trae Nest por defecto.
+Exception filters: maneja los errores de código en la respuesta http.Usualmente Nest ya incluye los casos comunes,pero se pueden expandir si es necesario.Por ejemplo(BadRequestException,UnauthorizedException,NotFoundException,ForbiddenException,PayloadTooLargeException,InternalServerException,...)
+
+Fijate que un BadRequest es cuando el cliente te manda algo mal,por ejemplo,el back espera un number y viene un string,o un objeto con 5 propiedades y vienen tres.
+Como nos encontramos dentro de la exception zone,puedo lanzar una exception de este tipo y lo va a manejar Nest,metiendola en la response:
+
+El lugar adecuado es el carsService:
+
+  findOneById(id: number) {
+    const car = this.cars.find(car => car.id === id);
+    if(!car){
+      throw new NotFoundException(`Car with id ${id} not found`);
+    }
+    return car;
+  }
+
+
+Fijate que en express tendria que hacer res.status(404).json(...) pero al estar en la expection Zone Nest ya mete ese throw en la response.
+
+			VIDEO 38 PETICIONES POST - PATCH -PUT -DELETE
+
+NOTA: los tipos de body más comunes que se mandan en un POST son json,form-data y x-www-form-urlencoded
+TIP: los tres tienen un Content-Type especifico para el header:
+ContentType: application/json
+ContentType: application/x-www-form-urlencoded
+ContentType: application/multipart/form-data
+
+Entre los dos para formularios el x-www-form-urlencoded es más comun a la hora de mandar texto mientras que multipart/form-data es usado para mandar binarios.
+Cualquier browser soporta estos tres MIME types.
+Si es un x-www-form-urlencoded cada espacio es sustituido por %20,si es un multipart/form-data cada parte es separada por un string boundary único
+
+Si bien el multipart/form-data es más eficiente porque no cambia cada espacio por 3bytes(%20) se recomienda seguir el estandar,files o binarios usando form-data y texto usando x-www-form-urlencoded
+
+Entonces,si vamos a crear un car,nuestra mejor elección es usar x-www-form-urlencoded y mandar la brand,el model etc...
+
+Nest ya viene configurado para distinguir entre JSON y los dos tipos de form,simplemente hay que usar el decorador @Body:
+
+  @Post()
+  createCar(@Body() body: any){
+    return body;
+  }
+TIP: realmente aqui body deberia ser un DTO,ya veremos esto,y como validarlo,etc...
+
+Bien,y para actualizar vamos a usar Patch.Obviamente,necesita un id y el body:
+
+  @Patch(':id')
+  updateCar(
+    @Param('id',ParseIntPipe) id: number,
+    @Body() body: any){
+    return body;
+  }
+
+ @Delete(':id')
+  deleteCar(@Param('id',ParseIntPipe) id: number){
+    return {
+      method: 'DELETE',
+      id
+    }
+  }
+Obviamente estos ejemplos son demasiado básicos.
+NOTA: puedo crear cuantos segmentos quiera,solo que no pueden llamarse igual:
+@Get(':id/:status) <- no puede ser :id/:id
+getCarByIdAndStatus(
+
+			SECCION 4 DTOS Y VALIDACIONES
+
+Nest tiene un montón de herramientas listas y construidas para gestionar operaciones en el back.Entre ellas tiene las validaciones(obviamente no sería eficiente ir lanzando los throws yo de uno en uno).
+Si el endpoint necesita tres campos de cualquier tipo puedo especificar eso.También veré los Data Transfer Object.Realmente no es más que una simple interfaz
+ o clase que tipa un objeto.
+Nest va más allá y permite añadir lógica a cada una de las propiedades del DTO y asegurarnos que la data venga como yo espero
+
+En esta sección terminaremos el CRUD,pero adicionalmente veremos:
+1- DTO (Data Transfer Object)
+2- Patch, Post, Delete
+3- Validaciones automáticas
+4- Class Validator
+5- Class Transformer
+6- Seguir el principio DRY (Don't repeat yourself)
+7- Algunos decoradores del Class Validator útiles
+
+					VIDEO 44 INTERFACES Y UUID
+
+Fijate que nest arranca con start:dev y no con únicamente start.Puedo ver también que ofrece unos logs con los controladores mapeados.Esto es muy útil,y además se puede personalizar,ya lo veremos.
+
+Usaremos uuid(necesita los types)
+>yarn add uuid
+
+import { v4 as uuidv4 } from 'uuid';
+
+@Injectable()
+export class CarsService {
+  private cars: Array<Car> = [
+    {
+      id: uuidv4(),
+      brand: 'Toyota',
+      model: 'Corolla',
+    },
+    {
+      id: uuidv4(),
+      brand: 'Honda',
+      model: 'Civic',
+    },
+    {
+      id: uuidv4(),
+      brand: 'Jeep',
+      model: 'Cherokee',
+    },
+  ];
+
+					VIDEO 45 PIPE PARSEUUIDPIPE
+
+Realmente debo comprobar que el param del segmento es un id.Esto es necesario,porque será un error en la base de datos cuando le llegue a ella un string cualquiera como si fuera un id.Deben llevar un formato concreto.
+
+IMPORTANTE: las bases de datos tiran un error si el id no está bien construido.
+Asi pues,hay que controlar esto en el controlador:
+
+  @Get('/:id')
+  getCarById(@Param('id', ParseUUIDPipe) id: string) {
+    return this.carsService.findOneById(id);
+  }
+Fijate que si no viene un id valido ni siquiera va a llegar al servicio,pues el controlador va a rechazar la request.Es justo lo que queremos,protegernos de que ese id llegue a la DB.
+
+NOTA: puedo mandar el Pipe o crear una instancia,si uso el Pipe Nest usará el mismo siempre que pueda,pero puede que necesite personalizar el pipe:
+
+  @Get('/:id')
+  getCarById(@Param('id', new ParseUUIDPipe({
+    	 version: 2,
+		errorHttpStatusCode: 403,
+        ...
+})) id: string) {
+    return this.carsService.findOneById(id);
+  }
+
+Si en vez del Pipe creo una instancia puedo abrir un objeto y configurar varios parámetros,como que devuelva un statusCode en concreto o la version,en este caso,si por ejemplo usara uuid version 2 tengo que usar asi el pipe.
+
+					VIDEO 46 DATA TRANSFER OBJECT
+
+
