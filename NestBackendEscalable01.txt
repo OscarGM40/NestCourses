@@ -731,4 +731,198 @@ Si en vez del Pipe creo una instancia puedo abrir un objeto y configurar varios 
 
 					VIDEO 46 DATA TRANSFER OBJECT
 
+Nosotros tenemos el problema de que el @Body es de tipo any.Perfectamente el front me puede mandar Brand y modelo en vez de brand y model y lo recibirá el back.
+Tengo que obligar a que me llegen las propiedades tal como estan en la DB,ya que si mando por ejemplo 'modelo' a la DB me va a dar error en la dB.
+
+En resumen,la data tiene que estar validada antes que llegue a la db.Para esto sxiste el DTO,para tipar la respuesta del front:
+
+export class CreateCarDto {
+  readonly brand: string;
+  readonly model: string;
+}
+Además,se recomienda que sean readonly,ya que el back no tiene que poder cambiar lo que vino del front(y viceversa,el front tmb deberia crearlas como final)
+Más adelante veremos porque hemos usado una clase y no una interfaz(los DTOs siempre son clases)
+
+  @Post()
+  createCar(@Body() createCarDto: CreateCarDto) {
+    return createCarDto;
+  }
+
+Fijate que esto realmente no ha hecho nada,aún puedo seguir añadiendo propiedades desde el front.Falta decirle a Nest que aplique las validaciones.
+
+		VIDEO 47 VALIDATIONPIPE - CLASS VALIDATOR Y CLASS TRANSFORMER
+
+La labor de validar la data que recibe el back es algo sumamente común.Cada uno de mis POST,PUT,inclusive DELETE debería de venir la data de cierta manera
+
+Bien,para ayudar con esto tenemos el pipe built-in ValidationPipe.Este pipe trabaja de la mano de un par de librerias externas muy recomendadas para extender funcionalidad:
+>yarn add class-validator class-transformer
+
+La libreria class-validator añade un montón de decoradores extra,como IsOptional,IsPositive,IsMongoId,IsArray,IsString,IsUUID,IsDecimal,IsDate,IsDateString,IsBoolean,IsEmail,IsUrl....(hay varias decenas,ver documentación).Está todo en el PDF
+
+Bien,ahora fijate que vamos a usar un Pipe a nivel de método(puedo usarlos a nivel de método,clase,a nivel global al ponerlo en un punto alto de la app,...):
+
+  @Post()
+  @UsePipes(ValidationPipe) <- decorador de método
+  createCar(@Body() createCarDto: CreateCarDto) {
+    return createCarDto;
+  }
+
+Esto por si sólo tampoco hizo nada,me falta cambiar el DTO:
+
+export class CreateCarDto {
+  @IsString({message:'La prop brand debe ser un string'})
+  readonly brand: string;
+  @IsString()
+  readonly model: string;
+}
+
+Y de nuevo esto tampoco evita que lleguen propiedades extra,solo evita que brand no traiga un numero,etc.
+
+IMPORTANTE: Nest trabaja mucho con el principio DRY,tal como tengo ubicado el @UsePipes tendría que repetirlo para el PUT,o para otros POST o PUT adicionales.Esto no es nada DRY,asi que lo mejor es subir el decorador @UsePipes a nivel de clase.Genial:
+
+@Controller('cars')
+@UsePipes(ValidationPipe)
+export class CarsController {
+
+Esto hará que todos los métodos de esa clase automáticamente usen ese Pipe,validando el DTO,aunque aún faltan cosas.
+
+Pero no solo esto,sino que realmente,debería estar a nivel de aplicación,toda mi app debería comprobar y validar los DTOs,no solo los controladores de Car.
+
+				VIDEO 48 CONFIGURAR PIPES A NIVEL DE APLICACION/GLOBAL
+
+Eso es algo sumamente común,usar validaciones(pipes) globales.Para realizar esto se hace sobre el main.ts.Puedo observar que tengo los métodos useGlobalPipes,useGlobalGuards,useGlobalFilters,Interceptors,etc.Es el lugar donde pondré configuraciones globales:
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+
+  app.useGlobalPipes(
+    new ValidationPipe({ <- fijate que usamos la forma de clase
+      whitelist:true,
+      forbidNonWhitelisted:true
+    })
+  )
+
+whitelist:true <-elimina las propiedades extra(es justo lo que queremos,que cualquier propiedad extra enviada desde el front no llegue al back.Obviamente lo quiero siempre.
+forbidNonWhitelisted: a true si llegan propiedades extra da un error,convierte en un bad request si llegan propiedades extra
+
+Desde luego tiene una pinta increible Nest.Fijate como ahora es simplemente anotar/decorar cada propiedad con lo que quiera,creando las validaciones que necesite:
+
+@IsString()
+@MinLength(3,{message:'El modelo debe de tener minimo 3 caracteres'})
+readonly model: string;
+
+				VIDEO 49 CREAR EL NUEVO CARRO
+
+No tiene más ciencia esto,sólo fijate que falta crear el id:
+
+  create(createCarDto: CreateCarDto) {
+    const createdCar: Car = {
+      id: uuidv4(),
+      ...createCarDto,
+    };
+    this.cars.push(createdCar);
+    return createdCar;
+  }
+
+  @Post()
+  createCar(@Body() createCarDto: CreateCarDto) {
+    return this.carsService.create(createCarDto);
+  }
+Puedo observar como el framework lleva a usar buenas prácticas per sé.
+
+			VIDEO 50 ACTUALIZAR UN CARRO
+
+Vamos a actualizar un Car.Fijate que tiene que ser un dto porque voy a mover esa data a otras partes de mi aplicación,aparte que era obvio,pues quiero actualizar un Car y debo asegurarme que el form del front cumple los requisitos:
+
+  @Patch(':id')
+  updateCar(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() createCarDto: CreateCarDto) {
+    return createCarDto;
+  }
+
+Sin embargo,podemos apreciar el problema de que no podemos actualizar una propiedad,hay que mandar las dos.Esto choca contra la naturaleza de un update.
+El problema es que el DTO anterior es especifico para crear un Car.Necesitamos otro especifico para actualizarlo.
+
+export class UpdateCarDto {
+  // es muy probable que reciba el ID desde el front
+  @IsString()
+  @IsUUID()
+  @IsOptional()
+  readonly id?: string;
+  
+  @IsString()
+  @IsOptional()
+  readonly brand ?: string;
+  
+  @IsString()
+  @IsOptional()
+  readonly model ?: string;
+
+}
+Fijate que tengo que ponerlas opcionales con @IsOptional y que es buena idea ser consistente en TS y marcarlas tmb como opcionales con ?. 
+Fijate además que el front suele mandar el id de la base de datos tmb
+Y fijate tmb que el updateXXX.dto es muy parecido al createxXX.dto con la salvedad que todas sus props son opcionales(y aparte de eso se agrega el ID.Arreglaremos esto usando DRY.
+
+Ahora si,cambiamos el controlador pasandole este dto nuevo necesario:
+  @Patch(':id')
+  updateCar(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateCarDto: UpdateCarDto,
+  ) {
+	return this.carsService.update(id, updateCarDto);
+  }
+
+Y en el servicio creamos la lógica de negocio:
+  update(id: string, updateCarDto: UpdateCarDto) {
+
+También podria comprobar que los ids no sean diferentes y usar una Exception de Nest ya que estoy en la exception Zone:
+
+if (updateCarDto.id && updateCarDto.id !== id) {
+   throw new BadRequestException(`Car id is not valid`);
+}
+
+* Recuerda que un throw no necesita return,ya va a salir de la ejecución del método por ser un throw.
+
+Terminamos haciendo como tarea el DELETE
+
+				VIDEO 53 RESUMEN DE LA SECCION
+
+Si miramos el CLI vemos que hemos visto como sacar la ayuda de Nest(nest -h),como generar un controlador,un módulo y un servicio por cli(nos faltan interceptores,guards,custom pipes y recurso completo <- genial)
+
+También hemos visto los Pipes que trae ya Nest(junto con las dependencias class-transformer y class-validator).
+
+Para que funcionará la validacion global de mis DTOS tuve que realizar una configuración muy sencilla a nivel global(en el main.ts)
+
+También vimos parte de la estructura recomendada para un modulo(me falta mucho para esto,ademas esto es muy subjetivo)
+
+Creamos un controlador para Cars(recuerda que los controladores no tienen apenas lógica de negocio acoplada,para eso estan los servicios)
+
+Nos faltan muchas cosas por ver,como que el POST no mande un 200,pero iremos poco a poco.En la siguiente seccion veremos como realizar un controlador mucho más rápido(con un recurso completo)
+También protegeremos estas rutas con Guards,etc...Este framework es muy bueno.
+
+Principio de sustitución de Liskov: las implementaciones,inyecciones no deberían estar atadas a una clase/concreción | implementación sino a una interfaz que permita cambiar entre implementaciones.
+
+			SECCION 5 NEST CLI RESOURCE - BRANDS CRUD
+
+Vamos a crear practicamente lo mismo mediante cli creando un full resource,que creará el controlador,los servicios,los dtos,inclusive instala cosas.
+Este comando me ayudará a inicializar WebSockets rápidamente más adelante.
+También veré comunicación entre modulos,algo básico entre una aplicación modularizada como lo es cualquiera de Nest.
+
+Esta sección es básicamente un reforzamiento de lo aprendido hasta el momento, pero le adicionamos la comunicación entre módulos y servicios.Veremos:
+
+1-SEED Endpoint( endpoint para precarga de datos)
+  - Llenar data de Carros y Marcas
+  - Comunicar módulo seed, con los otros módulos de nuestra aplicación
+
+2- Errores comunes a la hora de utilizar módulos enlazados
+
+3- Problemas con inyección de dependencias de módulos externos
+
+4- Brands CRUD completo
+  - Endpoints
+  - DTOs
+  - Servicios
+  - Controladores
+
 
