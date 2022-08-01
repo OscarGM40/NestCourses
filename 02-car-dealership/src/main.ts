@@ -11,7 +11,6 @@ async function bootstrap() {
       forbidNonWhitelisted:true //lanza 400 si vienen de más
     })
   )
-  app.use  
   await app.listen(3000);
 }
 bootstrap();

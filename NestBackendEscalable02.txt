@@ -1,0 +1,320 @@
+				SECCION 07 MONGODB POKEDEX
+
+Vamos a empezar a grabar y leer de DB,usaremos un contenedor de Docker.Esta sección enteramente se enfoca en la grabación a base de datos, pero puntualmente:
+
+1- Validaciones
+2- CRUD contra base de datos
+3- Docker y Docker Compose
+4- Conectar contenedor con filesystem (para mantener la data de la base de datos)
+5- Schemas
+6- Modelos
+7- DTOs y sus extensiones
+8- Respaldar a Github
+
+			VIDEO 68 INICIO PROYECTO POKEDEX
+
+Creo un nuevo proyecto 'nest new pokedex'.En esta seccion veré como crear un registro de logs de errores,crearemos un custom pipe y una conexión a base de datos.Más adelante haremos lo mismo con PostgreSQL.
+NOTA: fijate que puede que tenga que estar borrando todo lo relacionado a prettier
+
+			VIDEO 69 SERVIR CONTENIDO ESTÁTICO
+
+Es muy común ofrecer contenido http al acceder a las urls de mi app(normalmente se sirve una aplicación web,o una pagina web).
+
+Nosotros podemos servir contenido estático con Nest,aunque tenemos que añadir una dependencia y crear la carpeta 'public' en la raiz del proyecto:
+>yarn add @nestjs/serve-static
+
+Adicionalmente hay que configurar la app,en el app.module(el modulo más arriba),diciendole donde está ese directorio publico:
+
+* En el app.module.ts le paso el rootPath hasta public:
+
+import { Module } from '@nestjs/common';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
+
+@Module({
+  imports: [
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname,'..','public')
+    })
+  ],
+})
+export class AppModule {}
+
+Fijate que sólo con esto ya puedo embeber aqui una aplicación de Angular,React,Vue,etc y servirla.
+
+			VIDEO 70 GLOBAL PREFIX
+
+Es muy comun que toda mi app tenga el prefijo /api o /api/v1.Empecemos creando el resource pokemon:
+>nest g res pokemon --no-spec
+
+Si ahora voy a Postman puedo ir a /pokemon etc,pero de nuevo es muy comun que sea /api/pokemon.Realmente sería simplemente agregar esto al decorador @Controller:
+
+@Controller('api/pokemon')
+
+Pero podemos configurar globalmente esto,para no repetirlo en cada controlador,basta usar el método app.setGlobalPrefix(string):
+
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  app.setGlobalPrefix('api');
+  await app.listen(3000);
+}
+
+Y faltaria agregar el versionamiento de la api:
+  app.enableVersioning({
+    type: VersioningType.URI,
+    defaultVersion: '1',
+  });
+
+Ahora si,tendré que apuntar a /api/v1/ primero.
+
+				VIDEO 71 DOCKER - DOCKER-COMPOSE MONGO-IMAGE
+
+Copiar un  docker compose con la imagen mongo 5.0.0(importante que ya la tengo).Fijate que necesitó de un param en la MongoURI.
+
+				VIDEO 72 CREAR README
+
+Fijate que importante es crear el Readme.Vamos a dejar el icono y crear una lista ordenada con (1. 2. 3. ) y de bullets con *:
+
+# Ejecutar en desarrollo
+
+1. Clonar el repositorio
+2. Ejecutar
+```
+yarn install
+```
+3. Se requiere tener Nest CLI instalado
+```
+npm i -g @nestjs/cli
+```
+4. Levantar la base de datos(la MONGOURI necesita ?authSource=admin)
+```
+docker-compose up -d
+```
+
+## Stack usado
+* MongoDB
+* Nest
+* ODM Mongoose
+
+Fijate que es importante recalcar el stack usado.
+
+		VIDEO 73 CONECTORES NATIVOS DE NEST
+
+Nest se puede conectar a casi cualquier base de datos,siempre y cuando haya algun adaptador/libreria que lo permita.Usaremos mongoose,pero con un adaptador extra para nest.Este paquete wrapper que se pone encima de mongoose añade funcionalidad extra como mejor manejo de errores,poder usar inyección de dependencias,entities,etc, asi que es totalmente necesario instalar ambos:
+>npm install @nestjs/mongoose mongoose
+
+Posteriormente usaremos TypeORM para Postgre.Perfecto.
+
+NOTA: hay que ir al main.ts y traerse el MongooseModule y pasarle una MongoURI.
+
+En el main.ts
+import { MongooseModule } from '@nestjs/mongoose';
+
+@Module({
+  imports: [MongooseModule.forRoot('mongodb://localhost/nest')],
+
+TIP:si la base de datos no esta UP ni siquiera funcionarán los controladores.
+
+				VIDEO 74 CREAR ESQUEMAS Y MODELOS
+
+Cuando estoy trabajando con MongoDB,el gestor me va a proporcionar un id único a nivel mundial(uu).Bien,para enlazar la entidad usaré el decorador @Schema,de forma similar a @Entity en Spring:
+
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Document } from 'mongoose';
+
+@Schema()
+export class Pokemon extends Document {
+  @Prop({
+    unique: true,
+    index: true, //queremos un index para optimizar busquedas sobre el name
+  })
+  name: string;
+  @Prop({
+    unique: true,
+    index: true,
+  })
+  no: number;
+}
+
+export const PokemonSchema = SchemaFactory.createForClass(Pokemon);
+
+Fijate que tengo que crear el Schema desde la Factory y que cada columna le estoy creando un indice,ya que queremos buscar por name o por no.Además,son únicas.
+
+IMPORTANTE: aun falta otro paso importante,y es definir los modelos.Esta vez se hace en el modulo correspondiente(en este caso en pokemon.module):
+
+@Module({
+  controllers: [PokemonController],
+  providers: [PokemonService],
+  imports: [
+    MongooseModule.forFeature([{
+      name:Pokemon.name, // la entidad
+      schema: PokemonSchema
+    }])
+  ]
+})
+export class PokemonModule {}
+
+Fijate que es forFeature y que necesita el Schema y el name.Bastante sencillo.
+Esto ya deberia crear una colección,aunque puede que necesite insertar un documento para verla.
+
+			VIDEO 75 POST - RECIBIR Y VALIDAR LA DATA 
+
+Fijate que para las validaciones lo primero será instalar las librerias class-transformer y class-validator:
+yarn add class-transformer class-validator
+
+
+export class CreatePokemonDto {
+  @IsInt()
+  @IsPositive()
+  @Min(1, { message: 'number must be minimum 1' })
+  no: number;
+
+  @IsString()
+  @MinLength(1, { message: 'string must have at least 1 ch' })
+  name: string;
+}
+
+			VIDEO 76 CREAR POKEMON EN BASE DE DATOS
+
+Para poder interactuar con el Modelo vamos a tener que inyectar una instancia de tipo Model<Entity>.Realmente ya tenemos todo echo:
+
+ constructor(
+    @InjectModel(Pokemon.name)
+    private readonly pokemonModel:Model<Pokemon>
+    ){}
+Fijate que Pokemon es la Entity y que el decorador recibe el name como argumento.Este decorador @InjectModel lo hizo la gente de Nest para que pueda inyectar modelos en un Service(u otra clase).
+
+Ahora si,ya podemos grabar en DB.Realmente lo único que tengo que tener en cuenta es que es una acción asíncrona y tengo que etiquetar el método como async,que no lo estaba(ojo que todos vienen sin async):
+
+  async create(createPokemonDto: CreatePokemonDto) {
+    createPokemonDto.name = createPokemonDto.name.toLowerCase();
+    
+    const pokemon = await this.pokemonModel.create(createPokemonDto);
+
+    return pokemon;
+  }
+
+Ahora,si,ya puedo guardar en la dB mi primer documento.Fijate que si vuelvo a intentar guardar el mismo me dará un 500 por que el name es unique.Tenemos que gestionar mejor estos errores.
+
+			VIDEO 77 RESPONDER A UN ERROR ESPECIFICO
+
+Fijate que mongoose me esta dando un Error 11000 Duplicate Key.Si lo imprimo veré esto:
+{
+  index: 0,
+  code: 11000,
+  keyPattern: { name: 1 },
+  keyValue: { name: 'bulbasaur' },
+  [Symbol(errorLabels)]: Set(0) {}
+}
+Puedo acceder al keyValue para evitar tener que hacer una consulta a la DB.
+  
+async create(createPokemonDto: CreatePokemonDto) {
+    createPokemonDto.name = createPokemonDto.name.toLowerCase();
+
+    try {
+      const pokemon = await this.pokemonModel.create(createPokemonDto);
+      return pokemon;
+    } catch (error) {
+      if(error.code === 11000){
+        throw new BadRequestException(`Pokemon already exists on DB ${JSON.stringify(error.keyValue)}`)
+      }
+      console.log(error);
+      throw new InternalServerErrorException(`Can't create Pokemon - Check server logs`)
+    }
+  }
+
+Fijate que debo aprovecharme de estar en la exception Zone.Por último,puedo mandar cualquier StatusCode,tanto poniendo el numero en bruto como usando constantes:
+
+  @Post()
+  @HttpCode(200) <- también puedo usar HttpStatus.OK
+  create(@Body() createPokemonDto: CreatePokemonDto) {
+    return this.pokemonService.create(createPokemonDto);
+  }
+
+Es buena idea usar el diccionario de constantes.
+
+		VIDEO 	78 FIND ONE BY ID - BUSCAR POR MONGO ID,NAME O NO
+
+La Api Pokedex ya tiene echos los endpoints para buscar por MongoId,o cualquier campo.Tendremos que ver de que tipo es el param pues:
+
+  async findOne(param: string) {
+    let pokemon: Pokemon;
+    //si el param  es un no
+    if (!isNaN(+param)) {
+      // ojo que moongose va a convertir param a number,no hace falta hacerlo
+      pokemon = await this.pokemonModel.findOne({ no: param });
+    }
+    //si el param  es un mongoId
+    if (!pokemon && isValidObjectId(param)) {
+      pokemon = await this.pokemonModel.findById(param);
+    }
+    //si el param  es un string
+  if (!pokemon) {
+      pokemon = await this.pokemonModel.findOne({ name: param });
+    } 
+	// si no encontramos nada ya si lanzamos un 404
+  if(!pokemon){
+      throw new NotFoundException(`Pokemon with id,name or no ${param} not found`)
+    }
+    return pokemon;
+  }
+Fijate que NotFoundException tira un 404,no confundir una BadRequest que es un 400 con un 404 que es NoContent.
+
+Y observa como hemos usado la función de mongoose isValidObjectId.Genial
+
+				VIDEO 79 ACTUALIZAR POKEMON EN BD
+
+Fijate la importancia de ya tener bien hecho el getOne,asinto:
+
+  async update(term: string, updatePokemonDto: UpdatePokemonDto) {
+    // fijate la importancia de llamar en el update al getOne,esto es un estandar y una buena practica
+    const pokemon = await this.findOne(term);
+    // si llegamos aqui es que he encontrado un pokemon
+    if (updatePokemonDto.name) {
+      updatePokemonDto.name = updatePokemonDto.name.toLowerCase();
+    }
+    try {
+      await this.pokemonModel.findOneAndUpdate(
+        { _id: pokemon._id },
+        updatePokemonDto,
+      );
+      return { ...pokemon.toJSON(), ...updatePokemonDto };
+    } catch (error) {
+      this.handleExceptions(error);
+    }
+  }
+
+			VIDEO 81 ELIMINAR UN POKEMON - CUSTOM PIPE 
+
+Realmente queremos que el param sea un MongoId y borrar solo por Id.Crearemos un custom pipe para ello.Este pipe deberia vivir en un lugar global,ya que vale comprobar un mongoId vale para toda la app.
+Fijate que Nest ya recomienda crear una carpeta commons para cosas como esta,asi que primero creo el modulo y despues el pipe:
+
+>nest g mo common
+>nest g pi common/pipes/parseMongoId <- nombre de la clase
+
+
+Esto creará una clase con el decorador @Injectable que implementa la interfaz PipeTransform.Todo pipe implementa esta interfaz y debe desarrollar el método abstracsto transform(value,metadata)
+
+@Injectable()
+export class ParseMongoIdPipe implements PipeTransform {
+  transform(value: any, metadata: ArgumentMetadata) {
+    return value;
+  }
+}
+
+IMPORTANTE: los pipes transforman la data,no sólo visualmente,realmente transforman la data,esto es muy importante.
+Bien,además que siempre hay que retornar el valor,ya sea modificado o no,con todo esto puedo crearme un Pipe para asi reusarlo masivamente.Genial:
+
+@Injectable()
+export class ParseMongoIdPipe implements PipeTransform {
+  transform(value: string, metadata: ArgumentMetadata) {
+    // console.log({value,metadata})
+    if(!isValidObjectId(value)){
+      throw new BadRequestException(`${value} is not a valid MongoId`)
+    }
+    return value;
+  }
+}
+
+

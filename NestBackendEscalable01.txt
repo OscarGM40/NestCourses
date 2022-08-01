@@ -925,4 +925,103 @@ Esta sección es básicamente un reforzamiento de lo aprendido hasta el momento,
   - Servicios
   - Controladores
 
+			VIDEO 58 NEST CLI RESOURCE - BRANDS CRUD
+
+La idea es crear un nuevo endpoint para brands(/brands).Alli tendremos todas las marcas de Cards.Necesitamos crear todo el CRUD(modulo + servicio + controlador).
+Pero no lo vamos a hacer manualmente como la sección anterior,usaremos un full-resource,ya que es algo muy repetitivo y Nest se dió cuenta de esto:
+>nest g resource <nombre> <- luego nest g resource brands
+
+IMPORTANTE: no sólo genera un resource para REST,sino también para GraphQL y Sockets.(puedo ver que Nest puede generar resolvers,providers,incluso sub-apps embebidas o microservicios).
+
+Si trato de crear un resource veré que me hace un par de preguntas,sea como sea,al final termina creando el modulo,servicio,controler y dtos para create y update,ademas de una entity.Increible:
+
+CREATE src/brands/brands.controller.ts (915 bytes)
+CREATE src/brands/brands.module.ts (254 bytes)
+CREATE src/brands/brands.service.ts (623 bytes)
+CREATE src/brands/dto/create-brand.dto.ts (31 bytes)
+CREATE src/brands/dto/update-brand.dto.ts (173 bytes)
+CREATE src/brands/entities/brand.entity.ts (22 bytes)
+UPDATE package.json (2126 bytes)
+UPDATE src/app.module.ts (275 bytes)
+Dry run enabled. No files written to disk.
+
+NOTA: Nest se está adelantando a un requerimiento futuro y está creando las Entities como clases.Puedo ver una Entity como la representación de un tabla en SQL.
+
+IMPORTANTE: puedo ver que instaló una libreria en el package.json.La necesitaré:
+"@nestjs/mapped-types": "*",
+Y gracias a esta librería podemos hacer un Optional para clases para el update-dto:
+
+import { PartialType } from '@nestjs/mapped-types';
+import { CreateBrandDto } from './create-brand.dto';
+
+export class UpdateBrandDto extends PartialType(CreateBrandDto) {}
+
+Diria que usando Partial<T> no lo puedo meter en una clase(probar).
+
+				VIDEO 59 CRUD DE BRANDS
+
+Simplemente seguir el video.Muy sencillo.0 envidias,willy,no seas prehistoric.
+
+		VIDEOS 60-61 CREAR UN SEED PARA PRE-CARGA DE DATOS
+
+Normalmente se suele tener algun tipo de comando o mecanismo para hacer una precarga de ciertos datos fake iniciales en la app.Esto sólo se da en desarrollo,ojo.
+Vamos a crear otro resource para ello llamado 'seed':
+nest g res seed --no-spec
+
+Borramos dtos,entity,todo el crud menos el get,etc...
+
+IMPORTANTE:fijate que en el modulo seed hemos creado un subfolder 'data' que va a importar la clase Car y Brand de otros modulos.En Nest hay ciertas excepciones,como las clases,que puedo importar entre modulos sin tener que declararlo,es decir,su scope es global
+
+Bien,vamos a crear dos métodos en cada servicio que llenen la data:
+
+  private brands: Array<Brand> = [];
+
+  fillBrandsWithSeedData(brands: Brand[]) {
+    this.brands = brands;
+  }
+
+				VIDEO 62 INYECTAR SERVICIOS EN OTROS SERVICIOS
+
+Perfectamente puedo inyectar en el constructor de un servicio una dependencia de otro servicio.Sin embargo,fijate que necesito importar los Modules(y de echo tengo que exponer los servicios tmb).
+
+En el seed.module en el imports me traigo los modulos
+@Module({
+  imports: [CarsModule, BrandsModule],
+  controllers: [SeedController],
+  providers: [SeedService],
+})
+export class SeedModule {}
+
+También tengo que exportar los services en cada modulo:
+En el CarsModule en los exports y en el Brand
+@Module({
+  controllers: [CarsController],
+  // dado que un Service es un Provider todos vendrán aqui
+  providers: [CarsService],
+  exports: [CarsService]
+})
+export class CarsModule {}
+
+Ya puedo llamar al servicio.Recuerda que Nest es muy eficiente y reutiliza instancias.
+Por último,fijate como puedo enganchar un logo con HTML en el readme y darle estilos.Superútil:
+
+<p align="center">
+  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="200" alt="Nest Logo" /></a>
+</p>
+
+# Car Dealership
+
+Populate DB
+```
+http://localhost:3000/seed
+```
+
+			VIDEO 65 GENERAR BUILD DE PRODUCCION BÁSICO
+
+Antes que nada si vamos a la carpeta build veremos que ya hay archivos pasados a TS,aunque es el build de desarrollo.
+Si voy al package.json veré que tengo los comandos build y start:prod:
+"build": "nest build",
+"start:prod":"node dist/main"
+
+Podemos usar ambos comandos para generar el build de producción y levantarlo localmente viendo como quedaria en produccion.Desde luego es bien fácil ejecutarla en producción,aunque terminaremos haciendolo en remoto,obviamente.
 
