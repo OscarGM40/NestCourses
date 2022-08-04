@@ -28,8 +28,12 @@ export class PokemonService {
     }
   }
 
-  async findAll() {
-    return `This action returns all pokemon`;
+  async findAll(offset: number = 0, limit: number = 10) {
+    return this.pokemonModel.find()
+      .limit(limit)
+      .skip(offset)
+      .sort({no:1})
+      .select('-__v');
   }
 
   async findOne(param: string) {
@@ -74,13 +78,23 @@ export class PokemonService {
     }
   }
 
-  remove(id: string) {
-/*     const pokemon = await this.findOne(id);
+  async remove(id: string) {
+    /*  Queremos evitar dos consultas a la db   
+    const pokemon = await this.findOne(id);
     await this.pokemonModel.deleteOne(); */
 
-    const result = this.pokemonModel.findByIdAndDelete(id);
- 
-    return result;
+    const { deletedCount } = await this.pokemonModel.deleteOne({ _id: id });
+    if (deletedCount === 0) {
+      throw new BadRequestException(`Pokemon with id ${id} not found`);
+    }
+    return;
+  }
+  async removeAll() {
+    const { deletedCount } = await this.pokemonModel.deleteMany({});
+    if (deletedCount === 0) {
+      throw new BadRequestException(`Pokemons already deleted`);
+    }
+    return;
   }
 
   private handleExceptions(error: any) {

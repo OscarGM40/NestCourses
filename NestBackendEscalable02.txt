@@ -317,4 +317,206 @@ export class ParseMongoIdPipe implements PipeTransform {
   }
 }
 
+			VIDEO 83 VALIDAR Y ELIMINAR EN UNA SOLA OPERACIÓN	
+
+Podemos mirar la cuenta de los documentos que se borran y si es 0 lanzar un 400 ya que estamos en un Service.Genial:
+
+  async remove(id: string) {
+    const { deletedCount } = await this.pokemonModel.deleteOne({ _id: id });
+    if( deletedCount === 0) {
+      throw new BadRequestException(`Pokemon with id ${id} not found`);
+    }
+    return;
+  }
+
+			SECCION 08 SEED-DATA Y PAGINACION		
+
+Esta sección tiene por objetivo aprender:
+
+1- Uso de modelos en diferentes módulos
+2- SEED para llenar la base de datos
+3- Paginación de resultados
+4- DTOs para Query parameters
+5- Transformaciones de DTOs
+
+También les mostraré varias formas de hacer inserciones por lote y varias formas de lograrlo.
+
+			VIDEO 89 CREAR MODULO SEED
+
+Creamos un recurso y dejamos solo el GET.Usaremos axios:
+Fijate que él tomó una aproximación diferente ya que exportó el MongooseModule en vez de el service:
+
+  exports:[PokemonService,MongooseModule]
+})
+export class PokemonModule {}
+Realmente solo queria que vieramos que podemos exportar el modulo o el servicio.Obviamente es mejor exportar el servicio ya que tiene las validaciones,etc...
+
+NOTA: tenemos un problema si fueran miles de registros ya que no estamos usando paralelismo,pero podemos hacerlo y deberiamos.
+
+		VIDEO 93 INSERTAR VARIOS REGISTROS SIMULTANEAMENTE-EN PARALELO
+
+Una forma sería con Promise.all y anteriormente metiendo el create en cada posición.
+   // forma uno
+      insertPromisesArray.push(this.pokemonService.create({name,no}))
+      await Promise.all(insertPromisesArray)
+
+Sin embargo hay una forma mejor,con insertMany:
+
+    const pokemonToInsert: { name: string; no: number }[] = [];
+
+    data.results.forEach(async ({ name, url }) => {
+      const segments = url.split('/');
+      const no: number = +segments[segments.length - 2];
+      // forma uno
+      // insertPromisesArray.push(this.pokemonService.create({name,no}))
+      // await Promise.all(insertPromisesArray)
+
+      // forma dos
+      pokemonToInsert.push({ name, no });
+      // await this.pokemonService.create({ name, no });
+    });
+    await this.pokemonModel.insertMany(pokemonToInsert)
+    return data;
+Recuerda que el MongooseModule lo inyecté asi:
+@InjectModel(Pokemon.name)
+private readonly pokemonModel: Model<Pokemon>
+
+NOTA: normalmente este endpoint estará restringido,etc
+
+				VIDEO 94 CREAR UN CUSTOM PROVIDER
+
+Ya hemos comentado que la clase SeedService tiene la dependencia de axios,y por ello está acoplada a esta libreria.Sería mejor abstraer esta lógica de la clase y poder cambiar axios por fetch mediante el principio de sustitución de Liskov.
+
+Recuerda que un Provider tiene que estar definido en el módulo más cercano y que todo Provider puede ser inyectado(de ahi su nombre,puede ser proveido)
+
+Realmente es muy sencillo crear una abstración de Axios o fetch.Lo primero es crear la abstracción.Usaremos una interface:
+
+export interface HttpAdapter {
+  get<T>(url:string):Promise<T>; <- y asi para los 4 verbos
+}
+
+Despues creo las implementaciones,recuerda que debo anotarlas con @Injectable.
+
+@Injectable()
+export class AxiosAdapter implements HttpAdapter {
+  private readonly axios:AxiosInstance = axios;
+
+  async get<T>(url:string):Promise<T> {
+    try{
+      const {data} = await this.axios.get<T>(url);
+      return data;
+    } catch(error) {
+     throw new Error('This is an error'); <- habria que gestionar mejor el error  	
+IMPORTANTE: recuerda que es un Provider y que estoy en otro modulo,tengo que declararlo como Provider y además exportarlo( y además importar este modulo despues en cada otro modulo que quiera usar este provider) para poder inyectarlo en el SeedModule:
+
+@Module({
+  providers: [AxiosAdapter],
+  exports: [AxiosAdapter]
+})
+export class CommonModule {}
+
+Y recuerda, tengo que importar este modulo en el SeedModule:
+
+@Module({
+  imports:[PokemonModule,CommonModule],
+  controllers: [SeedController],
+  providers: [SeedService]
+})
+export class SeedModule {}
+
+
+Ya sólo queda usarlo,inyectando el axiosAdapter,que será intercambiable(fijate que inyecto la implementación,pero es intercambiable al extender la interfaz por cualquier otra que tmb la implemente).Perfecto.
+
+ constructor(
+    @InjectModel(Pokemon.name)
+    private readonly pokemonModel: Model<Pokemon>,
+    private readonly pokemonService: PokemonService,
+    private readonly axiosAdapter: AxiosAdapter,
+  ) {}
+
+  async executeSeed() {
+    const data = await this.axiosAdapter.get<PokeResponse>(
+      'https://pokeapi.co/api/v2/pokemon?limit=650',
+    );
+
+				VIDEO 95 PAGINACION DE POKEMONS
+
+ La API oficial de Pokemon permite mandarle dos queryParams para la paginación:
+https://pokeapi.co/api/v2/pokemon?offset=20&limit=20
+
+Dado que vamos a pasarlos por los query parameters vamos a necesitar el decorador @Query,que rescata todos los parametros de la query de una request:
+
+  @Get()
+  findAll(@Query() queryParameters) {
+    console.log(queryParameters);
+    return this.pokemonService.findAll();
+  }
+NOTA: queryParameters es un objeto.Cada propiedad será un query param.Fijate que tenemos que validarlos,si necesitamos un offset y un limit deben ser de tipo number,etc
+Asi podremos hacer this.pokemonModel.find().limit(limit).skip(offset);
+Vamos a crearnos un dto para este objeto queryParameters con estas validaciones.
+Esta clase va a lucir asi con las validaciones:
+
+export class PaginationDto {
+
+  @IsOptional()
+  @IsPositive()
+  @Min(1)
+  limit:number;
+
+  @IsOptional()
+  @IsPositive()
+  offset:number;
+}
+
+Sin embargo,si intento ir a https://localhost:3000/api/v1/pokemon?limit=10 veré que llega como un string y me viene un BadRequest
+
+			VIDEO 96 TRANSFORMING PAGINATION-DTO
+
+En nuestro main.ts puedo hacer una configuración global para que los dtos transformen la data a lo que estan esperando.Esto es un poco más costoso. Para ello basta con usar dos propiedades más,transform y transformOptions:
+
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true, //filtra las propiedades
+      forbidNonWhitelisted: true, //lanza 400 si vienen de más
+      transform:true, // permitir que los dtos transformen la data
+      transformOptions:{
+        enableImplicitConversion:true
+      }
+    }),
+  );
+
+Ahora si,con esta configuración ya tengo los argumentos necesarios para pasarlos del controller al service:
+  
+@Get()
+  findAll(@Query() {offset,limit}:PaginationDto) {
+    return this.pokemonService.findAll(offset,limit);
+  }
+
+Y el service simplemente llama al limit y skip con estos datos:
+  async findAll(offset: number = 0, limit: number = 10) {
+    return this.pokemonModel.find()
+      .limit(limit)
+      .skip(offset)
+      .sort({no:1})
+      .select('-__v');
+  }
+En la siguiente sección vamos a desplegar todo esto,usando Docker tmb.
+
+		SECCIÓN 9 CONFIGURAR VARIABLE DE ENTORNO Y DESPLIEGUE CON DOCKER
+
+Vamos a desplegar con Heroku.Crearemos un docker-compose con una composición de una imagen de Mongo y otra de Nest,muy interesante.
+En esta sección trabajaremos en la configuración de variables de entorno y su validación:
+Puntualmente veremos:
+
+1- Dockerizacion
+2- Mongo Atlas
+3- Env file
+4- joi
+5- Validation Schemas
+6- Configuration Module
+7- Recomendaciones para un Readme útil
+8- Despliegues
+9- Dockerfile
+
+Fijate que aún no hemos creado ningun .env para variables de entorno.
 

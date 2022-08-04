@@ -9,6 +9,10 @@ async function bootstrap() {
     new ValidationPipe({
       whitelist: true, //filtra las propiedades
       forbidNonWhitelisted: true, //lanza 400 si vienen de más
+      transform:true, // permitir que los dtos transformen la data
+      transformOptions:{
+        enableImplicitConversion:true
+      }
     }),
   );
   app.setGlobalPrefix('api');
