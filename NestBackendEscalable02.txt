@@ -520,3 +520,288 @@ Puntualmente veremos:
 
 Fijate que aún no hemos creado ningun .env para variables de entorno.
 
+			VIDEO 101 VARIABLES DE ENTORNO
+
+Obviamente nos hemos dejado literales como el puerto o la MongoURI que deberían estar en variables de entorno.
+Normalmente van en la raiz del proyecto en un archivo .env.Sin embargo,nest no va a leer el archivo .env sólo por crearlo, a diferencia de Express.
+
+Para que Nest pueda leer el .env hay que instalar el modulo @nestjs/config:
+>yarn add @nestjs/config
+
+Y en el app.module hay que importar el modulo:
+@Module({
+  imports: [ ConfigModule.forRoot() ]
+
+Ojo,que este modulo tiene que estar encima de por ejemplo este,ya que lleva el ConfigModule como dependencia:
+   MongooseModule.forRoot(process.env.MONGODB, {
+      authSource: 'admin',
+    }),
+
+				VIDEO 102 CONFIGURATION LOADER
+
+Adicionalmente al ConfigModule también se recomienda que si voy a hacer uso dentro de un building block(un servicio,un controlador) de una variable de entorno,que lo haga mediante un Servicio.
+En Nest es común crear un objeto con las env que quiero,mapeandolas:
+
+En /config/app.config.ts:
+export const EnvConfiguration = () => ({
+  // variable que me dice el entorno
+  environment : process.env.NODE_ENV === 'dev',
+  mongodb: process.env.MONGODB,
+  port: process.env.PORT || 3001,
+  defaultLimit: process.env.DEFAULT_LIMIT || 7,
+})
+
+Y para que lo lea se lo paso en el forRoot(load:[object]):
+ ConfigModule.forRoot({
+      load:[EnvConfiguration] < -fijate que es un array de objetos
+  }),
+
+Ahora si,ya podemos usar el Servicio que ofrece el configModule y recomiendan
+
+			VIDEO 103 CONFIGURATION SERVICE
+
+En el momento en que intente inyectar ese servicio veré que tengo que declararlo como Provider en ese modulo:
+
+  constructor(
+    @InjectModel(Pokemon.name)
+    private readonly pokemonModel: Model<Pokemon>,
+    private readonly configService: ConfigService
+  ) { }
+
+  imports: [ConfigModule] <- tengo que importar el configModule en el modulo que inyecte el servicio
+
+Ahora si,ya puedo usar su método get<T> de la clase del servicio para acceder a mi config.Fijate que me viene incluso como numero.
+
+    private readonly configService: ConfigService) { 
+    console.log(this.configService.get<number>('defaultLimit'))
+  }
+
+Y cabe recalcar que en los building blocks tengo que usar el servicio(es obligatorio o solo opcional),pero en el main.ts no estoy en un building block y puedo usar process.env:
+
+En el main.ts:
+  await app.listen(process.env.PORT, () => {
+    console.clear();
+    console.log('listening on port ' + process.env.PORT);
+  });
+
+		VIDEO 104 VALIDATION-SCHEMA PARA LAS ENV - JOI LIBRARY
+
+Recuerda que Subject y sus derivados son todas multicasting(Behaviour además necesita un valor inicial y la otra guarda un registro de las emisiones y se las da acualquier nuevo observer que se una)
+
+Siempre que quiera ser más estricto con la validación de un tipo(en este caso es un simple objeto,fijate que no tiene nada que ver con formularios9 puedo instalar joi(npm i joi).Anteriormente era hapi/joi,pero recomiendan pasarse ya a joi
+
+import * as Joi from 'joi';
+
+// debo crearme un Schema de validación
+export const JoiValidationSchema = Joi.object({
+  MONGODB: Joi.required(),
+  PORT:Joi.number().default(3005),
+  DEFAULT_LIMIT: Joi.number().default(6)
+})
+
+Afortunadamente,le puedo pasar este schema al ConfigModule en la propiedad validationSchema.
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      load:[EnvConfiguration],
+      validationSchema:JoiValidationSchema
+  }),
+
+Ahora si,esta aplicación va a necesitar la variable MONGODB,por ejemplo,ya que es required,las otras dos como tienen un default()no necesitan ser required().
+
+				VIDEO 105 ARCHIVO ENV-TEMPLATE
+
+Realmente no es buena idea no comunicar como lucen las variables de entorno.FH recomienda crear un .env.template,e incluso se pueden llenar algunas o dar una pequeña descripcion:
+
+MONGODB= la URI
+PORT=se espera el 3000
+DEFAULT_LIMIT= se espera 10
+
+También se recomienda decir en el README.md que existe el archivo y debe configurarse
+
+DESPLIEGUE A HEROKU: fijate que FH tuvo problemas por estar usando yarn ya que heroku necesita npm.REcuerda tmb que tengo que meter las variables de entorno desde la plataforma,de forma parecida a con Vercel.
+
+				VIDEOS 109-110 DOCKERIZAR LA APP
+
+Vamos a crear un compose,no solo con la imagen de mongo,sino tmb con la de node,asi,al hacer docker-compose up levantaré toda la app(y no solo la db).En resumen haremos un contenedor con toda la app.
+
+Bien,volviendo al video,fijate que vamos a usar las flags -f(file) en el comando docker-compose(ya que voy a tener varios yaml).Muy interesante:
+>docker-compose -f docker-compose.prod.yaml (up -d,stop,etc...)
+* Simplemente va como primer argumento.
+
+Y no solo eso,sino que como abstraeremos las env variables tamb le puedo pasar unenvFile con --env-file:
+>docker-compose -f docker-compose.prod.yaml --env-file .env.prod up -d <- Muy PRO
+
+NOTA: por defecto docker usa el .env por lo que si solo tengo este file no necesito pasarle la flag --env-file
+
+A continuación FH muestra como ejecutar un script de node con un contenedor,de forma simple pero muy acertada:
+
+FROM node:18-alpine3.15
+
+# Set working directory
+RUN mkdir -p /var/www/pokedex
+WORKDIR /var/www/pokedex
+
+# Copiar el directorio y su contenido
+COPY . .
+COPY package.json tsconfig.json tsconfig.build.json ./
+RUN yarn install --prod
+RUN yarn build
+
+
+# Dar permiso para ejecutar la applicación
+RUN adduser --disabled-password pokeuser
+RUN chown -R pokeuser:pokeuser /var/www/pokedex
+USER pokeuser
+
+# Limpiar el caché
+RUN yarn cache clean --force
+
+EXPOSE 3000
+
+CMD [ "yarn","start" ]
+
+Fijate que crea un user para bajar privilegios,y también es agnostico a si se usa TS o JS,etc(claro que el yarn start debe saber lo que hace).
+Además,normalmente voy a empaquetar una DB tmb con el script.
+
+	VIDEO 111 DEFINIR LA COMPOSICIÓN DE LA IMAGEN PARA EL SCRIPT REST  + LA DB
+
+Vamos a seguir otra aproximación mejor.Primero instalo sólo las dependencias de mi app con estas lineas:
+
+#PASO UNO:crear una imagen solo con las dependencias y darla un name
+FROM node:18-alpine3.15 AS deps
+
+RUN apk add --no-cache libc6-compat
+WORKDIR /app
+COPY package.json yarn.lock ./
+RUN yarn install --frozen-lockfile
+
+Despues,en un segundo paso construyo la app con la ayuda de esa primera image(recuerda que FROM crea una imagen):
+
+# PASO DOS: hacer el build hacia otra imagen con la ayuda de la primera
+FROM node:18-alpine3.15 AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN yarn build
+
+IMPORTANTE: si no hago estos dos pasos cada vez que haga un build me va a descargar todos los modulos de node y son muchas dependencias.Es un standar separar en dos imagenes ya el proceso( y tmb llamar deps a la imagen de dependencias y builder a la imagen segunda).
+
+#PASO TRES: el runner corre la aplicación:
+FROM node:18-alpine3.15 AS runner
+
+# Set working directory
+WORKDIR /usr/src/app
+
+COPY package.json yarn.lock ./
+
+RUN yarn install --prod
+
+COPY --from=builder /app/dist ./dist
+
+# Copiar el directorio y su contenido
+RUN mkdir -p ./pokedex
+
+COPY --from=builder ./app/dist/ ./app
+COPY ./.env ./app/.env
+
+# # Dar permiso para ejecutar la applicación
+RUN adduser --disabled-password pokeuser
+RUN chown -R pokeuser:pokeuser ./pokedex
+USER pokeuser
+
+EXPOSE 3000
+
+CMD [ "node","dist/main" ]
+
+Sin embargo,si bien se recomienda usar esta aproximación y no la primera,aun estamos con lo mismo en cuanto a la db.Lo que vamos a hacer es crear un docker-compose.prod:
+
+version: '3'
+
+services:
+  pokedexapp:
+    depends_on:
+      - db
+    build: 
+      context: .
+      dockerfile: Dockerfile.prod
+    image: pokedex-docker
+    container_name: pokedexapp
+    # restart: always # reiniciar el contenedor si se detiene
+    ports:
+      - "${PORT}:${PORT}" # es el PORT del .env luego es 3000:3000,o sea que saco la API por el 3000 de mi maquina desde el 3000 del container
+    # working_dir: /var/www/pokedex
+    environment:
+      MONGODB: ${MONGODB}
+      PORT: ${PORT}
+      DEFAULT_LIMIT: ${DEFAULT_LIMIT}
+    # volumes:
+    #   - ./:/var/www/pokedex
+
+  db:
+    image: mongo:5
+    container_name: mongo-poke #esto es un DNS resolvible 
+    # restart: always
+    ports:
+      - 27021:27017
+    environment:
+      - MONGO_INITDB_DATABASE=nest-pokemon
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=root
+    volumes:
+      - ./init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    # volumes: 
+    #   - ./mongo:/data/db <- ojo con el ./mongo en Linux
+
+Fijate que cada image es un DNS.Docker va a saber resolver ese name a una IP,luego la URI va a ser asi:
+MONGODB="mongodb://root:root@mongo-poke:27017/nest-pokemon" <- cambia a 17 ojo
+Debo recordar que container-name es un DNS resolvible para Docker
+
+NOTA: fijate que la primera vez he ejecutado:
+>docker-compose -f <file> --env-file <env> up --build
+* siempre que quiera reconstruir todo por cambios en el code tengo que pasarle --build,pero si no he hecho cambios no necesito la flag
+
+			VIDEO 113 MANTENER VOLUMEN Y ANALIZAR LA IMAGEN
+
+Obviamente no queremos estar perdiendo la base de datos cada vez que paremos el contenedor.Necesitaremos engancharla un volumen:
+
+  db:
+    image: mongo:5
+    container_name: mongo-poke #esto es un DNS resolvible 
+    # restart: always
+    ports:
+      - 27021:27017
+    environment:
+      - MONGO_INITDB_DATABASE=nest-pokemon
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=root
+    volumes:
+      - ./init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+      - /mongo:/data/db # <- ojo con ./mongo en Linux y permisos
+
+Recuerda que container_name es resolvible.Muy interesante.Lo suyo sería meterle la interfaz mongo-express también,ya lo haré.
+
+Recuerda actualizar el README para un ambiente de prod.
+
+				SECCION 10 TYPEORM - POSTGRESQL
+
+En esta sección estaremos trabajando con:
+
+1- TypeORM
+2- Postgres
+3- CRUD
+4- Constrains
+5- Validaciones
+6- Búsquedas
+7- Paginaciones
+8- DTOs
+9- Entities
+10- Decoradores de TypeORM para entidades
+11- Métodos BeforeInsert, BeforeUpdate
+
+Es una sección importante porque a partir de aquí, empezaremos a construir sobre ella relaciones, autenticación, autorización y websockets.
+
+NOTA: TypeORM se integra muy bien con Nest.Recuerda que como es una app nueva tengo que desinstalar el linter y el prettier,que está muy agresivo.Y la carpeta .git también.
+
+

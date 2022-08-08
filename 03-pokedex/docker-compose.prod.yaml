@@ -1,0 +1,35 @@
+version: '3'
+
+services:
+  pokedexapp:
+    depends_on:
+      - db
+    build: 
+      context: .
+      dockerfile: Dockerfile.prod
+    image: pokedex-docker
+    container_name: pokedexapp
+    # restart: always # reiniciar el contenedor si se detiene
+    ports:
+      - "${PORT}:${PORT}" # es el PORT del .env luego es 3000:3000,o sea que saco la API por el 3000 de mi maquina desde el 3000 del container
+    # working_dir: /var/www/pokedex
+    environment:
+      MONGODB: ${MONGODB}
+      PORT: ${PORT}
+      DEFAULT_LIMIT: ${DEFAULT_LIMIT}
+    # volumes:
+    #   - ./:/var/www/pokedex
+
+  db:
+    image: mongo:5
+    container_name: mongo-poke #esto es un DNS resolvible 
+    # restart: always
+    ports:
+      - 27021:27017
+    environment:
+      - MONGO_INITDB_DATABASE=nest-pokemon
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=root
+    volumes:
+      - ./init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+      - /mongo:/data/db # <- ojo con ./mongo en Linux y permisos

@@ -1,0 +1,7 @@
+# no dar seguimiento a las dist|build(ya que lo genera el script) ni a node_modules
+dist/
+build/
+node_modules/
+# no dar seguimiento a Git
+.gitignore
+.git/

@@ -9,10 +9,10 @@ async function bootstrap() {
     new ValidationPipe({
       whitelist: true, //filtra las propiedades
       forbidNonWhitelisted: true, //lanza 400 si vienen de más
-      transform:true, // permitir que los dtos transformen la data
-      transformOptions:{
-        enableImplicitConversion:true
-      }
+      transform: true, // permitir que los dtos transformen la data
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
     }),
   );
   app.setGlobalPrefix('api');
@@ -20,6 +20,9 @@ async function bootstrap() {
     type: VersioningType.URI,
     defaultVersion: '1',
   });
-  await app.listen(3000);
+  await app.listen(process.env.PORT, () => {
+    console.clear();
+    console.log('listening on port ' + process.env.PORT);
+  });
 }
 bootstrap();
