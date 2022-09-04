@@ -804,4 +804,788 @@ Es una sección importante porque a partir de aquí, empezaremos a construir sob
 
 NOTA: TypeORM se integra muy bien con Nest.Recuerda que como es una app nueva tengo que desinstalar el linter y el prettier,que está muy agresivo.Y la carpeta .git también.
 
+				VIDEOS 119-120 CONECTAR LA DB DE POSTGRES
 
+Ya tengo mi docker-compose que además levanta una GUI.Usaré ese.Lo siguiente es conectar Nest con Postgres.Fijate que para ello necesitaré instalar la libreria core typeorm y su libreria adapter @nestjs/typeorm(basicamente son todos los decoradores) y el driver(pg)
+
+>npm install @nestjs/typeorm typeorm pg
+
+Recuerda que en Nest para leer el .env necesito el modulo ConfigModule.
+>yarn add @nestjs/config
+
+Y en el app.module.ts
+import { ConfigModule } from '@nestjs/config';
+
+@Module({
+  imports: [ConfigModule.forRoot()],
+  controllers: [],
+  providers: [],
+})
+export class AppModule {}
+
+Ahora si,instalo y configuro el ORM:
+yarn add @nestjs/typeorm typeorm pg <- si me dejará el adapter veré un Error que me lo pide.
+
+Ya solo es configurar este modulo TypeORMModule:
+
+@Module({
+  imports: [
+    ConfigModule.forRoot(),
+    TypeOrmModule.forRoot({
+      type:'postgres',
+      host: process.env.DB_HOST,
+      port: +process.env.DB_PORT,
+      database: process.env.DB_NAME,
+      username: process.env.DB_USERNAME,
+      password: process.env.DB_PASSWORD,
+      autoLoadEntities:true,
+      // synchronize resincroniza cualquier cambio en las entidades(agregar una columna,etc),es algo que no querré en producción,pero si en desarrollo.Normalmente en prod se hacen migraciones,no se toca la db asi por asi
+      synchronize:true 
+    })
+  ],
+
+NOTA: fijate que esta vez no vamos a validar el archivo .env,como en la app anterior,contra un objeto etc.Desde luego se hará en empresas,pero ahora no es necesario.Fijate tmb que el puerto es el 5433 esta vez.
+
+			VIDEO 121 TYPEORM - ENTITY PRODUCT
+
+Recuerda que el slug es un string sin espacios que me sirve para crear URLs amigables.Por ejemplo:
+slug: "mens_chill-crew_neck_sweatshirt"
+
+Vamos a usar el Product del curso de Next,asi que ya sé como luce.
+IMPORTANTE: de igual manera que tuve que anotar con @Schema para Mongoose ahora tengo que anotar con @Entity por ser SQL:
+
+@Entity()
+export class Product {
+
+  @PrimaryGeneratedColumn()
+  id: number;
+
+}
+NOTA: muchas veces se trabaja con numeros enteros autoincrementales,y lo vamos a hacer,pero esta vez queremos usar un uuid.Esta libreria typeorm trae soporte total para ello.
+
+* Solo hay que indicar que será un uuid,claro que será un string entonces
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column('text',{ unique: true}) <- puedo decir que es un text y unique
+  title: string;
+
+Y de igual forma que con Mongoose tuve que crear un Schema de esta forma:
+export const PokemonSchema = SchemaFactory.createForClass(Pokemon);
+Y despues pasarlo en el modulo:
+  imports: [
+    MongooseModule.forFeature([{
+      name:Pokemon.name, // la entidad
+      schema: PokemonSchema
+    }]),
+    ConfigModule
+  ],
+  exports:[PokemonService,MongooseModule]
+})
+export class PokemonModule {}
+
+Tengo que hacer lo mismo con SQL,aunque es más sencillo:
+  imports: [TypeOrmModule.forFeature([Product])],
+})
+export class ProductsModule {}
+
+Ahora si,ya puedo ir a la DB y ver como se crear la tabla Product con esas dos columnas(id y title).
+
+				VIDEO 122 ENTIDAD SIN RELACIONES
+
+Vamos a crear una nueva columna,fijate que en Postgre no existe el tipo 'number' sino que es 'float'(importante,numeric es un string??):
+
+@Column('float',{default:0})
+price: number;
+
+De igual forma puedo pasarle array:boolean cuando sea un arreglo de elementos:
+  @Column('text',{
+    array: true
+  })
+  sizes: string[];
+
+Y fijate que si quiero crear una columna 'stock' hay van enteros y no flotantes,luego no será numeric sino int:
+  @Column('int',{default:0})
+  stock: number;
+
+				VIDEO 123 CREAR UN PRODUCTO - CreateProductDTO
+
+select a.name,b.location from empleados a left join departamentos b on a.id = b.employee_id;
+Bien,nuestro create-entity-dto va a lucir asi:
+
+export class CreateProductDto {
+  @IsString()
+  @MinLength(3, { message: 'title must have at least 3 ch' })
+  title: string;
+
+  @IsNumber() @IsPositive() @IsOptional()
+  price?: number;
+
+  @IsString() @IsOptional()
+  description?: string;
+  
+  
+  @IsString() @IsOptional()
+  slug?: string;
+
+  @IsInt() @IsPositive() @IsOptional()
+  stock?: number;
+
+  @IsString({each:true})
+  @IsArray()
+  sizes: string[];
+
+  @IsIn(['men','women','kids','unisex'])
+  gender: string;
+}
+
+Fijate en el uso de IsNumber para el price y como difiere de IsInt para el stock,de igual manera que usamos numeric e int para la DB.
+Fijate tmb en IsArray y en @IsIn([item,item,item]) como validaciones más avanzadas.
+
+				VIDEO 124 INSERTAR UN PRODUCT USANDO EL DTO
+
+Vamos a usar el patrón Repository para impactar la base de datos(con transacciones).Hay muchos beneficios al usar el patrón Repository.
+
+IMPORTANTE: la gente de Nest ya pensó en esto y crearon una clase inyectable cuando use TypeORM.La sintaxis es:
+
+ @InjectRepository(T)
+private readonly entityRepository: Repository<T>
+
+Donde T es la entidad(en este ejemplo Producto).No confundir con el DTO:
+
+constructor(
+  @InjectRepository(Product)
+  private productRepository: Repository<Product>,
+  ... resto de inyecciones
+
+Para crear un objeto de una Entidad simplemente uso create + save:
+  async create(createProductDto: CreateProductDto) {
+    try {
+      const product = this.productRepository.create(createProductDto)
+      await this.productRepository.save(product)
+    } catch (error) {
+      console.log(error);
+      throw new InternalServerErrorException('Error')
+    }
+  }
+Ojo,que create es sincrono,el que es asincrono es save
+
+				VIDEO 125 MANEJO DE ERRORES
+
+IMPORTANTE: igual que en Spring,tengo una mejor forma de hacer console.logs.Fijate que siempre debo aspirar a usar loggers que amplien funcionalidad.En este caso,dado que el framework es una copia de Spring,tmb tiene una clase Logger ya pre-built la cual puedo instancia y hacer logger.warn() | logger.error(),etc:
+
+  private readonly logger = new Logger('ProductsService');
+
+   } catch (error) {
+      this.logger.error(error);
+
+Cuando salte ese error me dice la clase donde saltó.Fijate que la idea es extrapolable:
+
+Nest running on port 3000
+[Nest] 104312  - 11/08/2022, 18:13:50   ERROR [ProductsService] QueryFailedError: duplicate key value violates unique constraint "UQ_f7bf944ad9f1034110e8c2133ab"
+
+Ahora si que son legibles los errores.Sin embargo,no debo parar solamente en un mejor formateo y visibilidad del error:
+   
+ } catch (error) {
+      if (error.code === '23505') {
+        throw new BadRequestException(error.detail);
+      }
+      this.logger.error(error);
+      throw new InternalServerErrorException('Unexpected error, check server logs');
+    }
+  }
+Es mejor que mire por el error.code y si es por Duplicate Key lo diga al developer de front.Y recuerda que no tiene sentido ir repitiendo esto por cada controlador.Debo no repetirme abstrayendolo a un método:
+
+  private handleExceptions(error: any) {
+    if (error.code === '23505') {
+      throw new BadRequestException(error.detail);
+    }
+    this.logger.error(error);
+    throw new InternalServerErrorException(
+      'Unexpected error, check server logs',
+    );
+  }
+
+catch(error){
+  this.handleExceptions(error) <- perfecto
+}
+
+				VIDEO 126 BEFOREINSERT Y BEFOREUPDATE
+
+Sin embargo,aun tenemos el problema del campo slug, ya que la DB lo necesita y en el DTO esta opcional.Porqué?Porque queremos generarlo,el slug es el title pero sin espacios,realmente no es necesario pedirlo(aunque lo pueden meter).
+
+Bien,podemos hacerlo de forma guarra con un replaceAll(fijate que replaceAll necesita aumentar la opcion target de es201X hasta es2021).De esta forma Typescirpt permite usar replaceAll en strings tmb,y no sólo en arreglos:
+
+  async create(createProductDto: CreateProductDto) {
+    try {
+      if(!createProductDto.slug){
+        createProductDto.slug = createProductDto.title
+        .toLowerCase()
+        .replaceAll(' ','_')
+        .replaceAll("'",'')
+      }
+Sin embargo,esto es muy básico,y además,si viene mal no va a entrar por el if.
+
+NOTA: este código es muy común.Lo voy a repetir en otro punto,casi seguro,luego sería mejor sacarlo a un método,igual que el errorhandler.Pero realmente esta lógica está atada al proceso de guardar o actualizar en la DB.Podemos crear un procedimiento para esto y automatizar la tarea:
+
+@Entity()
+export class Product {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column('text', { unique: true })
+  title: string;
+
+  // procedures
+  @BeforeInsert()
+  checkSlug(): void {
+    if (!this.slug) {
+      this.slug = this.title
+        .toLowerCase()
+        .replaceAll(' ', '_')
+        .replaceAll("'", '');
+    }
+  }
+}
+
+Fijate que al final lo dejamos asi:
+  // procedures
+  @BeforeInsert()
+  checkSlug(): void {
+    if (!this.slug) {
+      this.slug = this.title;
+    }
+    this.slug = this.slug
+      .toLowerCase()
+      .replaceAll(' ', '_')
+      .replaceAll("'", '');
+  }
+}
+
+Desde luego es mucho más limpio.Más adelante veremos el @BeforeUpdate,ya que esté solo entra con el insert pues es @BeforeInsert.
+
+				VIDEO 127 GET Y DELETE CON TYPEORM
+
+My regards: mis saludos, regarding to: respecto a
+Currently,I wasn't chosen despite being quite prehistoric
+
+En cuanto a la tarea no puede ser más simple:
+
+
+  async findOne(uuid: string) {
+    const product = await this.productRepository.findOneBy({ id: uuid });
+    if (!product) {
+      throw new NotFoundException(`Product with id ${uuid} not found`);
+    }
+    return product;
+  }
+
+  async remove(id: string) {
+    const deleteProduct = await this.productRepository.delete({ id: id });
+    if(deleteProduct.affected === 0){
+      throw new NotFoundException(`Product with id ${id} for deleting op not found`)
+    }
+  }
+
+				VIDEO 128 PAGINAR EN TYPEORM
+
+Queremos implementar la paginacion.Fijate que crear una paginacion es algo superbásico,y realmente no pertenece a products,sino a la app, asi que generaremos un modulo para ella:
+>nest g mo common
+
+Anteriormente hemos usado en el main.ts las propiedades transform y transformOptions para que el dto transformará la data.Vamos a ver otra forma de hacerlo.
+
+IMPORTANTE: cualquier QueryParam que traiga con @Query lo traigo como string.Vale madre que hayamos declarado que la prop es un number en la clase:
+  
+@Get()
+  findAll(@Query() pDto:PaginationDto) {
+    console.log({pDto})
+    return this.productsService.findAll();
+  }
+
+Si ahora hago un get a /api/v1/products?limit=10&offset=5 va a dar error,ya que son strings.Como son strings están chocando contra el @IsPositive.Ahora si,vamos a ver el decorador @Type,que es lo mismo que poner enableImplicitConversion a true,pero me deja más control que poner toda la app en true.
+
+export class PaginationDto {
+
+  @IsInt() @IsPositive() @IsOptional() @Type( () => Number)
+  limit?: number;
+
+  
+  @IsInt() @IsPositive() @IsOptional() @Type( () => Number)
+  offset?: number;
+
+Ahora si,puedo rescatar las props limit y offset de las query del getAll
+
+			VIDEO 129 BUSCAR POR SLUG O UUID
+
+Si simplemente quisieramos esto es muy sencillo con la función validate de la libreria uuid:
+
+ async findOne(term: string) {
+    let product: Product;
+    if(isUUID(term)){
+      product = await this.productRepository.findOneBy({id:term});
+    } else {
+      product = await this.productRepository.findOneBy({slug:term});
+    }
+    if (!product) {
+      throw new NotFoundException(`Product with term ${term} not found`);
+    }
+    return product;
+  }
+
+Sin embargo,vamos a añadir que se pueda buscar por el title,y es aqui donde vemos que puede haber espacios,que estamos expuestos a una inyección SQL,etc.
+TypeORM ya nos previene de todo esto mediante el QueryBuilder
+
+				VIDEO 130 QUERY BUILDER
+
+Siempre llega un punto en que tenga que hacer una query un poco más compleja que lo normal.
+
+NOTA: QueryBuilder escapa los caracteres especiales,evitando la inyección SQL.Además de usar consultas parametrizadas.
+
+ // esta instancia de tipo QueryBuilder tiene acceso a todo,a la cadena de conexión,a las relaciones,...
+  const queryBuilder = this.productRepository.createQueryBuilder();
+  product = await queryBuilder
+    .where('title =:title or slug =:slug',{
+      title:term,
+      slug:term,
+    }).getOne()
+    }
+
+Fijate que queryBuilder necesita del await y del getOne | getMany | getXXX
+Por último podriamos hacer que el term fuera insensitivo:
+
+   const queryBuilder = this.productRepository.createQueryBuilder();
+    product = await queryBuilder
+      .where('UPPER(title) =:title or slug =:slug',{
+        title:term.toUpperCase(),
+        slug:term.toLowerCase(),
+      }).getOne()
+
+Aunque usar UPPER o LOWER o ILIKE romperá el indice que habiamos creado
+
+				VIDEO 131 UPDATE EN TYPEORM
+
+Tenemos ciertas restricciones,como que el slug debe lucir como un slug,o el title es unico,asi que no es un update muy básico.
+
+TypeORM hace extremadamente sencillo los update,gracias al método preload,que es como un find + update(upsert??)
+ 
+ async update(id: string, updateProductDto: UpdateProductDto) {
+    // preload es un upsert,aunque falta el save
+    const product = await this.productRepository.preload({
+      id:id,
+      ...updateProductDto
+    })
+    if(!product) {
+      throw new NotFoundException(`Product with id ${id} not found`);
+    }
+    return await this.productRepository.save(product)
+  }
+Recuerda tmb que return await es redundante,el return ya hace de await.Un alumno comenta otra solución con QueryBuilder:
+const result = await this.productRepository.createQueryBuilder().update({
+  id:id,
+  ...updateProductDto
+)}.where({id}).execute()
+
+Desde luego reduce el acceso a la DB a uno solo y está metido en un try catch.
+
+Sin embargo,faltan las constraints,ya que no puedo modificar un title a un valor que ya existe,pues es unique:
+
+    try {
+      await this.productRepository.save(product)
+      return product;
+      
+    } catch (error) {
+      this.handleExceptions(error);
+    }
+
+			VIDEO 132 BEFORE UPDATE EN TYPEORM - procedures
+
+NOTA: parece que el @BeforeUpdate y el queryBuilder trabajan de otra forma:
+
+Hola gente, estaba tratando de hacer este mismo ejercicios de otra forma, hice la actualización con un queryBuilder. Actualiza las cosas, pero no aplica el @beforeUpdate() esto sucede porque según la documentación es necesario que se aplique el save para el afterUpdate y el beforeUpdate
+
+const queryBuilder = await this.productRepository
+          .createQueryBuilder()
+          .update<Product>(Product, { ...updateProductDto })
+          .where('id = :id', { id: id })
+          .returning('*')
+          .execute(); 
+
+En cuanto al código luce asi:
+
+  @BeforeUpdate()
+  checkSlugB4Update(): void {
+    this.slug = this.slug
+      .toLowerCase()
+      .replaceAll(' ', '_')
+      .replaceAll("'", '');
+  }
+
+			VIDEO 133 NUEVA COLUMNA - TAGS
+
+Es muy común tener una columna para realizar consultas rápidas por palabras clave en una app.
+
+  @Column({
+    type: 'text',
+    array:true,
+    default: []
+    })
+  tags: string[];
+
+Obviamente también tengo que ir al createDTO:
+ @IsString({each:true})
+ @IsArray()
+ tags:string[];
+
+Por último FH recomienda crear un proyecto cascarón para cualquier proyecto futuro mio y dejarlo en un repo y despues bajarlo de ahi(tmb recomienda tener la auth).
+
+			SECCION 11 RELACIONES ENTRE ENTIDADES EN TYPEORM
+
+Vamos a crear la relacion entre las imagenes de un producto y el producto.Tmb veré como hacer borrados en cascada,etc
+Esta sección está cargada de contenido nuevo que les puede servir mucho, especialmente si trabajan con bases de datos relacionales.
+
+Temas que veremos:
+1- Relaciones
+  a. De uno a muchos
+  b. Muchos a uno
+2- Query Runner
+3- Query Builder
+4- Transacciones
+5- Commits y Rollbacks
+6- Renombrar tablas
+7- Creación de un SEED
+8- Aplanar resultados
+
+La idea es hacer que nuestro endpoint de creación y actualización de producto permita la actualización de una tabla secundaria de la misma forma como lo hemos creado en la sección pasada.
+
+				VIDEO 139 PRODUCT-IMAGE ENTITY
+
+Vamos a crear una nueva tabla/entidad para las imagenes.Solo va a tener el id y un arreglo de urls:
+
+import { Column, Entity, PrimaryGeneratedColumn } from "typeorm";
+
+@Entity()
+export class ProductImage {
+
+  @PrimaryGeneratedColumn()
+  id: string;
+
+  @Column('text')
+  url: string;
+}
+
+Recuerda que lo tengo que pasar en el module:
+imports: [TypeOrmModule.forFeature([Product,ProductImage])],
+
+Fijate que me falta la columna de product_id con la clave foránea en la tabla relacionada
+
+				VIDEO 140 RELACIONES ONETOMANY Y MANYTOONE
+
+Es bastante sencillo trabajar con relaciones con este framework.Fijate que lo que queremos es que se cree la columna productId en la tabla relacionada ProductImages:
+
+En Product:                                En ProductImage:
+
+@OneToMany(									@ManyToOne(
+() => ProductImage, 					    () => Product,
+(productImage) => productImage.product,     (p) => p.images
+{cascade:true}                              product:Product
+)
+images:ProductImage[];
+
+La sintaxis es:
+@Relation(
+() => Entity a relacionar,
+(e) => e.field que relaciona en la otra tabla
+) Desde luego no puede ser más sencillo
+
+				VIDEO 141 CREAR IMAGENES DE UN PRODUCTO
+
+Vamos a asegurarnos que los urls se insertan bien.Tal como está ahora,dará fallo,ya que nuestro createProductDto no tiene el campo images aún.
+
+  @IsString({ each: true })
+  @IsArray()
+  @IsOptional()
+  images?: string[];
+
+En este punto vemos varios fallos aún arreglando el DTO,pues Nest no sabe que images es de tipo ProductImage[].Habrá que inyectar otro repositorio:
+
+  constructor(
+    @InjectRepository(Product)
+    private readonly productRepository: Repository<Product>,
+    @InjectRepository(ProductImage)
+    private readonly productImageRepository: Repository<ProductImage>
+  ) {}
+
+Y ahora,cuando quiera crear una image tengo que hacerlo usando el patrón repositorio:
+      const { images = [], ...productDetails } = createProductDto;
+
+      if (!createProductDto.slug) {
+        createProductDto.slug = createProductDto.title
+          .toLowerCase()
+          .replaceAll(' ', '_')
+          .replaceAll("'", '');
+      }
+      const product = this.productRepository.create({
+        ...productDetails,
+        images: images.map((image) =>
+          this.productImageRepository.create({ url: image }),
+        ),
+      });
+
+				VIDEO 142 APLANAR LAS IMAGENES
+
+Fijate que cuando busque por productos por defecto no voy a ver las imagenes,ya que es una relación.Igual que habría que hacer en mongoose con populate('ref','fields') tengo que especificarlo en cada controlador
+
+  async findAll(pDto: PaginationDto) {
+    const { limit = 10, offset = 0 } = pDto;
+    return this.productRepository.find({
+      take: limit,
+      skip: offset,
+      relations:{
+        images: true
+      }
+    });
+  }
+
+simplemente es pasar la propiedad relations con el nombre del campo a true(esto trae todo,puedo traer solo ciertos campos)
+
+En este punto como el true nos trae todo,realmente no queremos los ids,etc,asi que vamos a cambiar el findAll un poco:
+   
+   const products = await this.productRepository.find({
+      take: limit,
+      skip: offset,
+      relations:{
+        images: true
+      }
+    });
+
+    return products.map(product => ({
+      ...product,
+      images: product.images.map( img => img.url)
+    }))
+  }
+
+* Sn embargo, para el findOneBy que hemos usado tenemos un problema,ya que no permite las relaciones(a diferencia del find).
+Lo que vamos a hacer es configurar la app con EagerRelations.Cualquier método find XXX traerá las relations.Hay ciertas excepciones,como al usar QueryBuilder,que no hará el populate asi sino con otro método.
+
+Para configurar esto es tan sencillo como pasar eager a true:
+
+  @OneToMany(
+    () => ProductImage,
+    (productImage) => productImage.product,
+    {cascade:true,eager:true}
+  )
+  images?:ProductImage[];
+
+En este punto,si hago un getOne por Id como estoy usando findOneBy({id:term}) si me va a popular,pero si busco por el slug o el title usamos el QueryBuilder y ya no lo trae.
+
+    const queryBuilder = this.productRepository.createQueryBuilder('prod');
+      product = await queryBuilder
+        .where('UPPER(title) =:title or slug =:slug', {
+          title: term.toUpperCase(),
+          slug: term.toLowerCase(),
+        })
+        .leftJoinAndSelect('prod.images','prodImages')
+        .getOne();
+
+Fijate que leftJoinAndSelect(where,alias) me pide el campo y un alias.En este punto le puedo dar un alias al repositorio pasandole 'prod' en el createQueryBuilder(que ya sabe que es la entidad Producto).
+
+ const queryBuilder = this.productRepository.createQueryBuilder('prod');
+ product = await queryBuilder
+   .where('UPPER(title) =:title or slug =:slug', {
+      title: term.toUpperCase(),
+      slug: term.toLowerCase(),
+   })
+   .leftJoinAndSelect('prod.images', 'prodImages')
+   .getOne();
+  }
+    if (!product) {
+      throw new NotFoundException(`Product with term ${term} not found`);
+    }
+    return product;
+  }
+
+  async findOnePlain(term: string) {
+    // estoy llamando al findOne,para poder devolver las imagenes tmb
+    const { images = [], ...rest } = await this.findOne(term);
+    return {
+      ...rest,
+      images: images.map((i) => i.url),
+    };
+  }
+Fijate que ahora tenemos el problema de que añadir las imagenes rompe el tipado.Una solución fácil es crear otro método,llamar al primero y añadir lo necesario y cambiar la llamada en el controlador al servicio.método adecuado.
+
+				VIDEO 143 QUERY RUNNER
+
+El Query Runner me va a permitir a mi ejecutar X cantidad de instrucciones SQL como si fuera una sola.Si todas salen bien las ejecutará,pero con que falle solo una puedo revertir todos los cambios.
+
+TIP: el queryRunner es un objeto que tiene que conocer la cadena de conexión.En Nest usaremos una inyección de la clase DataSource(que ya sabe la conexión):
+
+constructor( private readonly dataSource: DataSource){}
+
+const queryRunner = this.dataSource.createQueryRunner(); <- esto es como una transacción,habrá que hacerla rollback o commitearla despues.
+
+			VIDEO 144 CREANDO TRANSACCIONES
+
+Recuerda que una transacción es una serie de queries que impactarán o no la base de datos,segun lo que yo quiera.Actuan como una sola.
+
+NOTA: puedo ver que tengo un delete y un softDelete.Una columna marcada como softDelete realmente no se borró,solo se desactivó ??
+
+    // create query runner
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      if (images) {
+        await queryRunner.manager.delete(ProductImage, {
+          // ojo que la columna se llama product en la clase ProductImage
+          product: { id: id },
+        });
+        product.images = images.map((image) =>
+          this.productImageRepository.create({ url: image }),
+        );
+      }
+      await queryRunner.manager.save(product);
+      await queryRunner.commitTransaction();
+      // release libera la conexión,ojo
+      await queryRunner.release();
+      // await this.productRepository.save(product);
+      return this.findOnePlain(id);
+    } catch (error) {
+      // si hubiera un error hago rollback y suelto la conexión
+      await queryRunner.rollbackTransaction();
+      await queryRunner.release();
+      this.handleExceptions(error);
+    }
+  }
+
+Fijate que es simplemente memorizar la sintaxis.
+
+					VIDEO 145 ELIMINACIÓN EN CASCADA
+
+De nuevo no voy a poder borrar un producto que tenga al menos una relación con imagenes.Realmente solo es ir a la entidad y especificarlo en el decorador:
+
+
+@Entity()
+export class ProductImage {
+
+  @PrimaryGeneratedColumn()
+  id: string;
+
+  @Column('text')
+  url: string;
+
+  @ManyToOne(
+    () => Product,
+    (product) => product.images,
+    { onDelete: 'CASCADE'} // si borro un producto se borran sus imagenes
+  )
+  product:Product;
+}
+
+Fijate que en la entidad Producto estaba asi(como cambia de cbs a un obj):
+  @OneToMany(
+    () => ProductImage,
+    (productImage) => productImage.product,
+    {cascade:true,eager:true}
+  )
+  images?:ProductImage[];
+
+Ahora que tengo el delete en cascade vamos a crearnos un servicio que borre ambas tablas,lo usaremos más adelante:
+
+  async deleteAllProducts() {
+    const query = this.productRepository.createQueryBuilder('product');
+
+    try {
+      return await query.delete().where({}).execute();
+    } catch (error) {
+      this.handleExceptions(error);
+    }
+  }
+
+De igual forma,podia haberse echo con transacciones en vez de un delete en cascada,que igual no quiero:
+
+async remove(id: string) {
+  const product = await this.findOnePlain(id);
+ 
+  const queryRunner = this.dataSource.createQueryRunner();
+  await queryRunner.connect();
+  await queryRunner.startTransaction();
+ 
+  try {
+    if (product.images.length > 0) {
+      await queryRunner.manager.delete(ProductImage, { product: { id } });
+    }
+    await queryRunner.manager.delete(Product, { id });
+ 
+    await queryRunner.commitTransaction();
+    await queryRunner.release();
+ 
+  } catch (error) {
+ 
+    await queryRunner.rollbackTransaction();
+    await queryRunner.release();
+ 
+    this.handleDBExceptions(error);
+  }
+}
+Imprescindible manejar las transacciones en cualquier DB.
+
+				VIDEO 146 PRODUCT-SEED
+
+Queremos crear un endpoint para la carga inicial de todos los productos.Para ello crearemos un recurso:
+>nest g res seed --no-spec
+
+Fijate que la tarea de llamar al Servicio de otro modulo implica exportar el Servicio e importar el Módulo(ambas).Es decir hay que decirle al módulo que debe exportar antes de importarlo en otro.
+NOTA:dado que el módulo de productos usa TypeORM es bien común exportarlo tmb al resto de la app:
+
+En el modulo que exporta el Servicio:
+@Module({
+  controllers: [ProductsController],
+  providers: [ProductsService],
+  imports: [TypeOrmModule.forFeature([Product, ProductImage])],
+  exports: [ProductsService, TypeOrmModule], <- AQUI
+})
+export class ProductsModule {}
+
+Y en cualquier otro modulo que lo requiera lo debo importar:
+@Module({
+  controllers: [SeedController],
+  providers: [SeedService],
+  imports:[ProductsModule],
+})
+export class SeedModule {}
+
+					VIDEO 147 INSERTAR DE FORMA MASIVA
+
+Como siempre,lo mejor es usar un Promise.all con lo que tengo que crear las Promises.Dado que el create del productsService es async me valdrá llamarlo sin el await.
+
+  async runSeed() {
+    await this.insertNewProducts();
+    return 'INITIAL SEED DATA LOADED';
+  }
+
+  private async insertNewProducts() {
+    this.productsService.deleteAllProducts();
+
+    const products = initialData.products;
+    const insertPromises = [];
+
+    products.forEach((product) => {
+      insertPromises.push(this.productsService.create(product));
+    });
+
+    await Promise.all(insertPromises);
+
+    return true;
+  }
+
+Fijate que apenas tarda 300ms.Perfecto
+
+					VIDEO 148 RENOMBRAR TABLAS
+
+Una de las bondades de trabajar con TypeORM es poder renombrar las tablas.Fijate que se llaman product y product_image y no tiene mucho sentido ya que son muchos productos e imagenes,no uno solo
+
+Simplemente es pasarle el name en el decorador:
+@Entity({name: 'products'})
+export class Product {

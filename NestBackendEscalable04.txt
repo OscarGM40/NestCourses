@@ -1,0 +1,57 @@
+			SECCION 14 DOCUMENTACION - OpenAPI
+
+Veremos como documentar con Swagger,mediante una lib.También veré brevemente como documentar con Postman de forma rápida.
+
+El objetivo de esta sección es trabajar con la documentación semi-automática que nos ofrece Nest para seguir  la especificación de OpenAPI
+Puntualmente veremos:
+
+1- Postman documentation
+
+2- Nest Swagger
+
+				VIDEO 192 DOCUMENTAR MEDIANTE POSTMAN
+
+Para documentar puedo darle en los tres puntos en una request y darle a exportar.Veré una documentación que genera Postman,aunque no es demasiado precisa.
+Además,lo que ofrece es publicar un endpoint o controller,pero no le da seguimiento.Si cambiara algo tengo que volver a exportar/desplegarlo de nuevo.
+
+Sin embargo Nest ya ofrece esta feature de documentar el controller(y además le da seguimiento).Obviamente es mejor opción esta forma.
+Para esto hay que ir al main.ts y configurar todo esto.
+
+			VIDEO 193 NESTJS SWAGGER - OpenAPI SPECIFICATION
+
+Doc: https://docs.nestjs.com/openapi/introduction
+
+NOTA: La especificación OpenAPI es una definición de formato usado agnóstica al lenguaje para describir APIs RESTful.Nest provee un módulo dedicado que permite generar dicha documentación mediante decoradores.
+
+Lo primero sería instalar este módulo(se llama SwaggerModule):
+
+>npm install --save @nestjs/swagger
+
+Despues solo hay que configurarlo en el main.ts:
+
+import { NestFactory } from '@nestjs/core';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { AppModule } from './app.module';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+
+  const config = new DocumentBuilder()
+    .setTitle('Cats example')
+    .setDescription('The cats API description')
+    .setVersion('1.0')
+    .addTag('cats')
+    .build();
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api', app, document);
+
+  await app.listen(3000);
+}
+bootstrap();
+
+Fijate que al final no usamos addTag aqui,pues sería la misma tag para todos,tagearemos desde la clase.Fijate tmb que lo sirve en setup('api'),es decir en /api,al cual puedo ir ya(o cambiarlo si quisiera)
+Realmente puedo ver que falta mucha info(de ahí lo de semiautomático).Hay que ir a cada controller y darle más info mediante decoradores.
+
+				VIDEO 194 Tags, ApiProperty y ApiResponse
+
+

@@ -1,0 +1,1033 @@
+					SECCION 12 CARGA Y SUBIDA DE ARCHIVOS
+
+La carga y subida de archivos(PDFs,Imagenes) es de lo más común en una app.Fijate que no es muy recomendable tener las imagenes en el mismo file system que el backend por motivos de seguridad.
+
+Esta sección es bien interesante porque trabajaremos con la carga de archivos a nuestro backend. Idealmente recuerden, que no es recomendado colocar archivos físicamente en nuestro backend, lo que se recomienda es subirlos y colocarlos en un hosting o servicio diferente.
+
+Pero el conocimiento de tomar y ubicar el archivo en otro lugar de nuestro file system es bastante útil.
+
+Aquí veremos validaciones y control de carga de cualquier archivo hacia nuestro backend.
+
+				VIDEO 153 SUBIR UN ARCHIVO AL BACKEND
+
+Nest proporciona un modulo built-in basado en Multer de Express.También proporcionan el pipe ParseFilePipe(esto es muy reciente y está solo desde Nest9)
+
+NOTA: si bien Multer viene ya en el frame no asi sus tipos:
+>npm i -D @types/multer
+
+Despues voy a necesitar los decoradores @UploadedFile() y @UseInterceptor:
+
+  @Post('product')
+  @UseInterceptors(FileInterceptor('file'))
+  uploadProductFile(@UploadedFile() file: Express.Multer.File) {
+    return file;
+  }
+
+Los interceptores interceptan la solicitud y también pueden mutar la respuesta.Una forma de usar un interceptor de forma local a un controlador es anotandolo con @UseInterceptors.También tengo la forma de usarlos globalmente.
+
+NOTA: el FileInterceptor viene de express:
+import { Controller, Post, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+* Si eligo Nest sobre Fastify tengo que buscar otra forma
+
+Fijate que el file tiene estas propiedades(originalname,encoding,mimetype) y el buffer de bytes en buffer.data:
+
+"fieldname": "file",
+    "originalname": "kk.webp",
+    "encoding": "7bit",
+    "mimetype": "image/webp",
+    "buffer": {
+        "type": "Buffer",
+        "data": [
+            82,56,56,56,56,56,...
+
+NOTA: este controlador sube el file a una carpeta temporal(todos los controladores lo hacen,supongo).Es decir,que tras subirlo tengo que hacer algo con ese file(o moverlo al filesystem o darle una url,etc).Pero falta gestionar esto.
+Recuerda que si es algo importante es mejor cerrar el filesystem y usar software de terceros como Cloudinary.
+
+				VIDEO 154 VALIDAR ARCHIVOS
+
+Podemos ver que si trato de subir un PDF el controlador lo acepta perfectamente.Tenemos que gestionar esto(además de que el nombre debe de ser único).
+Para la validación vamos a crear un helper(aunque la pudimos poner directamente).Fijate que la firma es fileFilter(request,file,callback):
+
+import { fileFilter } from './helpers/fileFilter';
+
+@Controller('files')
+export class FilesController {
+  constructor(private readonly filesService: FilesService) {}
+
+  @Post('product')
+  @UseInterceptors(FileInterceptor('file',{
+    fileFilter:fileFilter
+  }))
+  uploadProductFile(@UploadedFile() file: Express.Multer.File) {
+    return file;
+  }
+
+Y esa función fileFilter que sacamos al folder helpers  tiene esta lógica:
+export const fileFilter = (
+  req: Express.Request,
+  file: Express.Multer.File,
+  callback: Function,
+) => {
+  if (!file) return callback(new Error(`File is empty`), false);
+
+  const fileExtension = file.mimetype.split('/')[1];
+  const validExtensions = ['jpg', 'png', 'gif', 'jpeg'];
+
+  if (validExtensions.includes(fileExtension)) {
+    callback(null, true);
+  }
+  callback(null, false);
+};
+Fijate que las callback llevan el error primero y despues si dejan pasar o no.Obviamente es una lógica muy simple.
+IMPORTANTE: este middleware que lanza el interceptor por si sólo no va a gestionar el statusCode ni los errores,tengo que hacerlo también en el controlador:
+
+@Controller('files')
+export class FilesController {
+  constructor(private readonly filesService: FilesService) {}
+
+  @Post('product')
+  @UseInterceptors(FileInterceptor('file',{
+    fileFilter:fileFilter
+  }))
+  uploadProductFile(@UploadedFile() file: Express.Multer.File) {
+    if(!file) throw new BadRequestException(`Make sure there is a file and it is an image`)
+    return file;
+  }
+
+}
+En este punto quizas sería mejor usar sólo el controlador,o abordarlo desde otra forma.
+
+				VIDEO 155 GUARDAR LA IMAGEN EN EL FILE SYSTEM
+
+No queremos tener una carpeta public,que todo dios puede consultar.Esto es de peña muy prehistoric.
+Lo que vamos a hacer es crear una carpeta llamada static con dos subfolders,'uploads' y 'products'.Recuerda que habrá un momento en que estén vacíos,y git no le da seguimiento a subfolders vacios,luego debo crearles un .gitkeep
+
+				VIDEO 156 RENOMBRAR ARCHIVO SUBIDO
+
+Dado que dejar el originalname puede inducir a error,se se suele poner un timestamp en el nombre,aunque aqui usaremos uuid.Fijate que con Nest + multer es un juego de niños subir imagenes:
+
+
+  @Post('product')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      fileFilter: fileFilter,
+      limits: { fileSize: 1024 }, //en bytes
+      storage: diskStorage({
+        destination:'./static/products', // ./ desde la raiz del project
+        filename:fileNamer
+      }),
+    }),
+  )
+  uploadProductFile(@UploadedFile() file: Express.Multer.File) {
+    if (!file)
+      throw new BadRequestException(
+        `Make sure there is a file and it is an image`,
+      );
+    return file;
+  }
+Apenas hay que pasar la propiedad storage con el destino y el nuevo nombre del file.Ese middleware fileNamer luce asi:
+
+export const fileNamer = (
+  req: Express.Request,
+  file: Express.Multer.File,
+  callback: Function,
+) => {
+  if (!file) return callback(new Error(`File is empty`), false);
+
+  const fileExtension = file.mimetype.split('/')[1];
+  const fileName = `${uuid()}.${fileExtension}`;
+  
+  callback(null, false);
+};
+
+				VIDEO 157 SERVIR ARCHIVOS DE MANERA CONTROLADA
+
+Vamos a usar el decorador @Res para modificar la Response.Fijate que @Res es de tipo Express.Response:
+
+  @Get('product/:imageName')
+  findProductImage(
+    @Res() res: Express.Response,
+    @Param('imageName') imageName: string) {
+    const path = this.filesService.getStaticProductImage(imageName);
+    return path;
+  }
+
+NOTA: en el momento que use este decorador yo tomo el control de la Response,y por ello el controlador estará esperando un res.status(xxx).json,etc:
+
+  @Get('product/:imageName')
+  findProductImage(
+    @Res() res: Response,
+    @Param('imageName') imageName: string) {
+    const path = this.filesService.getStaticProductImage(imageName);
+    
+    res.status(403).json({
+      ok:false,
+      path:path
+    })
+  }
+
+NOTA: cuando use @Res me voy a saltar interceptores que tenga definidos de forma global asi como otras partes del ciclo de vida de Nest,asi que hay que usarlo con precaución y sabiendo lo que se hace.
+
+Asi que simplemente uso el response.sendFile de Node:
+  @Get('product/:imageName')
+  findProductImage(
+    @Res() res: Response,
+    @Param('imageName') imageName: string) {
+    const path = this.filesService.getStaticProductImage(imageName);
+    
+    res.sendFile(path);
+  }
+Como es un endpoint y le oculto el path,el usuario sólo verá el archivo,nada más.Y este endpoint es lo que deberia de retornarles(fijate que esto es lo que hace Cloudinary,darte una URL que pedirá el archivo por detrás).Genial
+
+					VIDEO 158 RETORNAR SECURE-URL
+
+Para retornar la secureUrl vamos a usar variables de entorno.Recuerda que tengo que inyectar el servicio ConfigService:
+
+  constructor(
+    private readonly filesService: FilesService,
+    private readonly configService: ConfigService
+    ) {}
+
+    const secureUrl = `${this.configService.get('HOST_API')}/v1/files/product/${file.filename}}`;
+    return { secureUrl };
+
+Recuerda también que los framework de back suelen llevar un logger más profesional.Es buena idea cambiarlo:
+
+const logger = new Logger('Bootstrap')
+ await app.listen(PORT, () => {
+    console.clear();
+    logger.log('Nest running on port ' + PORT);
+  });
+
+Genial.Investigar como hacer esto en Express.
+
+			VIDEO 159 OTRAS FORMAS DE DESPLEGAR ARCHIVOS
+
+Vamos a crear un directorio public,y metemos ahi las imagenes que proporciona el dios FH.Recuerda que en Nest tengo que hacer una instalación para tener un directorio público.Se trata del modulo ServeStatic:
+
+>yarn add @nestjs/serve-static
+
+@Module({
+  imports: [
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname, '../','public')
+    })
+
+Fijate que Nest tiene visión sobre los modulos de Node path o fs,y de forma modular.Fijate también que podia haber usado '../public) o path.resolve.
+
+TIP ULTRA PRO: fijate que puedo concatenar con || en SQL(wtf!).Dado que tenemos mal la url tengo que realizar un update masivo:
+update product_images set url = 'http://localhost:3000/api/products' || url; fijate que le concateno el valor actual con || url;
+
+Aunque fijate que no vale la pena guardar esto en la DB.Estoy metiendo mucha data repetida('http://localhost:3000...) y realmente puedo hacerlo de otra forma,con una simple variable,etc.
+
+			160 COLOCAR LAS IMAGENES EN EL DIRECTORIO ESTÁTICO
+
+Simplemente movemos las imagenes.Fijate que dejarlas en la carpeta public es más sencillo,pero cualquiera puede hacer un GET al recurso.Por otro lado,crear una secureUrl es más complejo,pero más seguro.Además,podría implementar una autorizacion por roles al controlador,etc.
+Muy interesante crear una secureUrl y el controller.
+
+			SECCION 13 AUTENTICACIONES-AUTORIZACIONES
+
+Crearemos nuestro propio controlador @Auth,que tiene un argumento opcional con el role.
+Esta es una de las secciones más grandes del curso y está cargada de muchos conceptos nuevos, mi recomendación es que traten de digerirla en dos jornadas de estudio en lugar de intentar verla completamente en una sola corrida.
+
+Puntualmente veremos:
+
+1- Autenticación
+2- Autorización
+3- Json Web Tokens
+4- Hash de contraseñas
+5- Nest Passport
+6- Módulos asíncronos
+7- Protección de rutas
+8- Custom Method Decorators
+9- Custom Class Decorators
+10- Custom Property Decorators
+11- Enlazar usuarios con productos 
+12- Bearer Tokens
+13- Y mucho más
+
+Hay varias tareas dentro de esta sección que esperaría que intenten llevar con calma, todo lo que esta sección contiene puede ser abrumador.
+
+					VIDEO 165 ENTIDAD DE USUARIOS
+
+Recuerda que cada entidad debe ir en los imports de su modulo asi:
+
+imports: [TypeOrmModule.forFeature([User])],
+
+En cuanto a la entidad fijate que para Postgre una columna boleana va anotada con 'bool' y no 'boolean' como pudiera parecer:
+
+@Entity({ name: 'users' })
+export class User {
+
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column('text',{ unique: true})
+  email: string;
+
+  @Column('text')
+  password: string;
+
+  @Column('text')
+  fullName: string;
+
+  @Column('bool')
+  isActive: boolean;
+
+  @Column({ type: 'text', array: true, default: []})
+  roles: string[];
+}
+
+NOTA: mientras no anote una columna con @Column no se crea en la DB(confirmar)
+
+				VIDEO 166 REGISTRAR UN USUARIO NUEVO
+
+Lo primero es definir la ruta /auth/register por POST.Recuerda que para inyectar un repositorio en un constructor es:
+constructor(
+   @InjectRepository(User)
+   private userRepository: Repository<User>
+){}
+
+TIP: fijate que la clase a injectar es Repository<T> y que hay que anotarla con @InjectRepository(T).Sencillo
+
+@Injectable()
+export class AuthService {
+  constructor(
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+  ) {}
+
+  async create(createUserDto: CreateUserDTO) {
+    try {
+      const user = this.userRepository.create(createUserDto);
+      await this.userRepository.save(user);
+      return user;
+    } catch (error) {
+      this.handleDBErrors(error)
+    }
+  }
+
+  private handleDBErrors(error:any):never {
+    if(error.code === '23505'){
+      throw new BadRequestException(`${error.detail}`)
+    }
+    console.log(error)
+    throw new InternalServerErrorException(`Please check server logs`)
+  }
+
+TIP: la funcion handleDBErrors nunca va a retornar nada(pues solo tiene throws).Se puede anotar como :never.
+
+					VIDEO 167 ENCRIPTAR LA CONTRASEÑA
+
+Las contraseñas jamás deben ser visibles en la DB.Para encriptar hay muchas tecnias,como hash de dos vias o de una.Usaremos de una sola via(con lo que jamas podrá recuperarse).Como nota el payload de un jwt es de dos vias(por eso puedo usarlo).
+Usaremos bcrypt.Lamentablemente necesitaré los types si uso TS:
+yarn add bcrypt
+yarn add -D @types/bcrypt
+
+Simplemente encriptamos la pass con bcrypt.hashSync(field,rounds):
+  
+async create(createUserDto: CreateUserDTO) {
+    try {
+      const user = this.userRepository.create({
+        ...createUserDto,
+        password: bcrypt.hashSync(createUserDto.password, 10),
+      });
+      
+      await this.userRepository.save(user);
+      delete user.password;
+
+      return user;
+      // TODO: Retornar el jwt
+    } catch (error) {
+      this.handleDBErrors(error);
+    }
+  }
+Aun nos faltaria el token,pero vamos a ver el login primero.
+
+				VIDEO 168 LOGIN DE USUARIO
+
+Para el login siempre se presentará la duda de como saber si la password plana que viene es la que corresponde con la encriptada.
+
+Creamos el controlador con la ruta:
+
+@Post('login')
+loginUser(@Body() loginUserDto: LoginUserDTO) {
+  return this.authService.login(loginUserDto);
+}
+
+Y el servicio.Fijate que no queremos devolver la password,podemos ir a la Entidad y manejar cada campo globalmente,de forma muy parecida a un select("-_id") de mongo:
+
+  @Column('text', { select: false })
+  password: string;
+
+  @Column('text')
+  fullName: string;
+
+  @Column('bool', { default: true, select: false })
+  isActive: boolean;
+
+Desde ahora cada vez que haga un findXXX no veré cualquier campo anotado con select:false(pero no los borra,claro).Mucho mejor que usar delete user.password,etc.
+
+NOTA: esto también lo puedo hacer usando find + where,es el mismo resultado:
+
+      const user = await this.userRepository.findOne({
+        where: { email},
+        select: { email:true,password:true}
+      });
+
+Y ya desde aqui es simplemente mirar si encuentra un user por el email y si además coinciden las pass se le genera el token:
+async login(loginUserDto: LoginUserDTO) {
+    const { email, password } = loginUserDto;
+    try {
+      // puedo usar select en la Entity tmb
+      const user = await this.userRepository.findOne({
+        where: { email },
+        select: { email: true, password: true },
+      });
+      if (!user) {
+        throw new UnauthorizedException('Credentials are not valid(email');
+      }
+      if(!bcrypt.compareSync(password, user.password)){
+        throw new UnauthorizedException('Credentials are not valid(password)')
+      }
+      // TODO: Retornar el jwt
+      return user;
+    } catch (error) {
+      this.handleDBErrors(error);
+    }
+
+			VIDEO 169 NEST AUTHENTICATION - PASSPORT
+
+En este punto necesitamos el jwt,claro.Nest recomienda usar passport,una de las librerias más usadas de Node.Fijate que siempre voy a necesitar una estrategia/provider,en este ejemplo es una estrategia local,luego deberia instalar:
+
+PASO UNO: Instalar libs
+
+npm install @nestjs/passport passport passport-local
+npm install -D @types/passport-local
+
+IMPORTANTE:siempre voy a necesitar el modulo core 'passport' y la adaptación a nest '@nestjs/passport'.Despues las lib extra que pida cada estrategia.Además de sus tipos.
+En nuestro caso no usaremos una estrategia local,sino jwt,que pide dos:
+npm i @nestjs/jwt passport-jwt(ademas de @nestjs/passport passport)
+npm i @types/passport-jwt -D
+
+Igual la primera vez son varias lib,pero es bastante sencillo todo.
+
+PASO DOS: declarar la estrategia en el module de autenticación:
+@Module({
+  controllers: [AuthController],
+  providers: [AuthService],
+  imports: [
+    TypeOrmModule.forFeature([User]),
+    PassportModule.register({ defaultStrategy: 'jwt' }),
+    JwtModule.register({
+      secret:process.env.JWT_SECRET,
+      signOptions:{
+        expiresIn:'2h'
+      }
+    })
+  ],
+
+  exports: [TypeOrmModule],
+})
+export class AuthModule {}
+
+Sin embargo,se nos presenta el problema que la carga de la env puede no estar en ese momento,y lo mejor sería cargar el módulo asincronamente.
+
+				VIDEO 170 MODULOS ASINCRONOS
+
+Esta estrategia me vale para cargar cualquier modulo asincronamente(fijate que lo que queremos es cargar el modulo JwtModule asincronamente por la env).
+
+    // Carga asincrona de un modulo
+    JwtModule.registerAsync({
+      imports: [ConfigModule ],
+      inject:[ConfigService],
+      useFactory: (configService:ConfigService) => {
+        return {
+          secret:configService.get('JWT_SECRET'),
+          signOptions:{
+            expiresIn:'2h'
+          }
+        }
+      }
+    })
+    
+// Carga sincrona de un modulo
+/*     JwtModule.registerAsync({
+      secret:process.env.JWT_SECRET,
+      signOptions:{
+        expiresIn:'2h'
+      }
+    }) */
+  ],
+
+Fijate que al cargar asincronamente un modulo puedo importarModulos,inyectar Services,etc.Fijate en el uso de inject y useFactory con la inyección por método.Genial.Tmb podia haber usado un return implicito de un obj.
+
+			VIDEO 171 DEFINIR LA JWT STRATEGY
+
+Realmente no hemos hecho nada más que configurar la semilla.Nos falta toda la lógica de autenticación por tokens(payload,verificación,etc...).
+Recuerda que el payload de un token usa un hash de dos vias y por ello no es muy seguro y no debe llevar información sensible.
+
+Lo que hay que hacer es crear una clase que anotaré como Injectable(ojo que cualquier clase inyectable debo definirla en los providers del modulo.Esta clase implementará una clase Strategy entre otras cosas:
+
+import { ConfigService } from '@nestjs/config';
+import { PassportStrategy } from '@nestjs/passport';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Strategy } from 'passport-jwt';
+import { Repository } from 'typeorm';
+import { User } from '../entities/user.entity';
+import { JwtPayload } from '../interfaces/jwt-payload.interface';
+import { ExtractJwt } from 'passport-jwt'
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+
+// PassportStrategy(Strategy) es funcion(clase)
+@Injectable()
+export class JwtStrategy extends PassportStrategy(Strategy) {
+
+  constructor(
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+    configService: ConfigService
+  ){
+// hay que llamar a la superclase con esto
+    super({
+      secretOrKey: configService.get('JWT_SECRET'),
+      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken()
+    });
+
+  }
+  
+  async validate(payload: JwtPayload): Promise<User> {
+    const { email } = payload;
+    // si tiene un email valido en nuestra DB existe el user
+    const user = await this.userRepository.findOneBy({email});
+    if(!user) throw new UnauthorizedException('Token not valid')
+    // si si existe miramos que esté activo
+    if(!user.isActive) throw new UnauthorizedException('User is inactive')
+
+    // lo que sea que retorne aqui se va a añadir a la request(esto lo hace Nest,es como si en Express hiciera req.user = user)
+    return user;
+  }
+}
+
+Recuerda que falta declararla como Provider,pues es inyectable:
+@Module({
+  controllers: [AuthController],
+  providers: [AuthService,JwtStrategy],
+  exports: [TypeOrmModule, JwtStrategy, PassportModule, JwtModule], <- exporto todo por si acaso.
+
+Fijate que siempre tengo esto para volver aqui.
+
+				VIDEO 173 GENERAR UN JWT
+
+Para generar un token tendré que inyectar el Service JwtService,que es proporcionado por el JwtModule(el cual declaramos asincronamente).Dado que lo configuramos con una semilla y una expiresIn en el Module el Service lo sabrá.
+
+constructor(
+ private readonly jwtService: JwtService
+){}
+
+El método para generarlo:
+  private getJwtToken(payload: JwtPayload) {
+    const token = this.jwtService.sign(payload);
+    return token;
+  }
+
+Por último voy a la Entity y vamos a crear dos triggers para el email,no lo queremos en mayúsculas:
+ 
+  @BeforeInsert()
+  checkFieldsBeforeInsert(){
+    this.email = this.email.toLowerCase().trim();
+  }
+
+  @BeforeUpdate()
+  checkFieldsBeforeUpdate(){
+    this.email = this.email.toLowerCase().trim();
+  }
+
+				VIDEO 174 PRIVATE ROUTE - GUARDS
+
+Vamos a crear nuestra primera ruta privada que validará si hay un user válido.
+IMPORTANTE: toda ruta es pública por defecto.Para que sea privada tengo que usar un Guard.Los guards se usan para permitir o prevenir el acceso a una ruta.
+
+Si bien vamos a terminar usando nuestro propio decorador,de momento usaremos @UseGuards que es un core building-block que viene por defecto en Nest
+
+import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+
+  @Get('private')  
+  @UseGuards(AuthGuard())
+  testingPrivateRoute(){
+    return {
+      ok:true,
+      message: 'Hola Mundo Private'
+    }
+  }
+
+NOTA: dentro de @UseGuards tengo que especificar una función que implemente el canActivate.La lib @nestjs/passport me provee de una fn ya llamada AuthGuard() 
+
+Esta función va a pedir un Bearer Token para poder pasar a la ruta.En realidad va a hacer todo que tenemos en la jwt-strategy,en el validate:
+  
+async validate(payload: JwtPayload): Promise<User> {
+    const { email } = payload;
+    // si tiene un email valido en nuestra DB existe el user
+    const user = await this.userRepository.findOneBy({email});
+    if(!user) throw new UnauthorizedException('Token not valid')
+    // si si existe miramos que esté activo
+    if(!user.isActive) throw new UnauthorizedException('User is inactive.Talk to an admin')
+
+    // lo que sea que retorne aqui se va a añadir a la request(esto lo hace Nest,es como si en Express hiciera req.user = user)
+    return user;
+  }
+Asi que tmb va a mirar por el campo isActive y va a meter en req.user el user.
+
+				VIDEO 175 TAREA CAMBIAR EMAIL POR ID EN EL PAYLOAD
+
+IMPORTANTE: fijate que no estamos devolviendo el id en el login.FAltaba añadirlo en el select:
+    const user = await this.userRepository.findOne({
+        where: { email },
+        select: { email: true, password: true, id: true },
+      });
+Esto es básico,si no le mandaré un undefined al generar el token:
+
+ return {
+        ...user,
+        token: this.getJwtToken({ id: user.id }), <- user.id es undefined
+      };
+
+Esto romperá todo el Guard.
+
+			VIDEO 176 CUSTOM DECORATORS PARA PROPERTIES - GETUSER
+
+Lamentablemente con la nest-cli solo puedo crear decoradores de clase,y lo que queremos es sólo de propiedad.Primero podemos ver la request de un controlador asi:
+
+  
+  @Get('private')  
+  @UseGuards(AuthGuard())
+  testingPrivateRoute( @Req()request: Express.Request){
+    console.log(request) <- ez inmensah asinto
+    return {
+      ok:true,
+      message: 'Hola Mundo Private'
+    }
+  }	
+
+Obviamente es inmensa,pero puedo ver que en request.user tengo el usuario(tendré que hacer una petición GET a esa ruta).Es decir,que podriamos haber usado @Req() y obtener el user de ella,pero vamos a verlo con un custom decorator.
+
+Recuerda que un decorador no es más que una simple función,asi que creo un file en el folder decorators.Esta función la puedo llamar como quiera,pero tengo que usar createParamDecorator(callback) que lleva una callback como argumento para desarrollar la lógica de este decorador:
+
+import { createParamDecorator } from "@nestjs/common";
+
+export const GetUser = createParamDecorator(
+  (data,ctx:ExecutionContext) => {
+    return 'Hola Mundo'
+  }
+)
+
+Para usarlo es igual que los demás:
+  @Get('private')  
+  @UseGuards(AuthGuard())
+  testingPrivateRoute(
+    @GetUser() user:User
+  ){
+    console.log(user)
+    return {
+      ok:true,
+      message: 'Hola Mundo Private'
+    }
+  }
+
+Obviamente debería ser un string y no un User.Si mandara argumentos en el decoradror los veria en la data(primer argumento de la cb).El ctx es inmenso de nuevo.
+
+NOTA:si quisiera mandar varios args tiene que ser en un array ??:
+@GetUser(['email','id','password'])
+
+export const GetUser = createParamDecorator(
+ (data,ctx) => { console.log(data) <- aqui viene el arreglo ese }
+
+El ExecutionContext es el contexto en el cual se está ejecutanto la función decoradora.Tengo acceso a la request,además de otras cosas mediante este ctx.
+
+export const GetUser = createParamDecorator(
+  (data,ctx:ExecutionContext) => {
+    // obtener la request desde el contexto de ejecución de este decorador
+    const req = ctx.switchToHttp().getRequest()
+    const user = req.user;
+
+Al final lo dejamos asi:
+export const GetUser = createParamDecorator(
+  (data,ctx:ExecutionContext) => {
+    // obtener la request desde el contexto de ejecución de este decorador
+    const req = ctx.switchToHttp().getRequest()
+    const user = req.user;
+    if(!user) throw new InternalServerErrorException(`User not found (request)`)
+
+    return user;
+  }
+)
+
+			VIDEO 177 TAREAS SOBRE CUSTOM DECORATORS
+
+Tarea UNO: mandar un arg por el decorator para ver sólo el email.
+
+export const GetUser = createParamDecorator(
+  (data:string,ctx:ExecutionContext) => {
+    const isEmailArg = data === 'email';
+    // obtener la request desde el contexto de ejecución de este decorador
+    const req = ctx.switchToHttp().getRequest()
+    const user = req.user;
+    if(!user) throw new InternalServerErrorException(`User not found (request)`)
+
+    return isEmailArg ? user.email : user;
+  }
+)
+Fijate que él uso return (!data) ? user : user[data].Esto es más reutilizable que mi solución.
+
+Tarea DOS: crear un decorator que devuelva los RawHeaders de la request:
+
+import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+
+export const RawHeaders = createParamDecorator(
+  (_, ctx: ExecutionContext) => {
+    const req = ctx.switchToHttp().getRequest();
+    return req.rawHeaders;
+  },
+);
+NOTA: ya hay un decorador llamado @Headers() headers:IncomingHttpHeaders que devolvia los headers.
+
+			VIDEO 178 CUSTOM GUARD Y CUSTOM CLASS DECORATOR
+
+Vamos a crear otro endpoint.Fijate en el uso del decorador @Metadata(key,values):
+
+
+  @Get('private2')
+  @SetMetadata('roles',['admin','user'])
+  @UseGuards(AuthGuard())
+  privateRoute2(
+    @GetUser() user: User,
+  ){
+    return {
+      ok:true,
+      user
+    }
+  }
+
+Lo que haremos es dependiendo de los roles que vengan en la metadata dejarle pasar o no.Esta vez vamos a generar el guard por cli:
+>nest g gu auth/guards/userRole --no-spec
+
+NOTA: para que un guard sea válido tiene que implementar la interface CanActivate
+
+import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import { Observable } from 'rxjs';
+
+@Injectable()
+export class UserRoleGuard implements CanActivate {
+  canActivate(
+    context: ExecutionContext,
+  ): boolean | Promise<boolean> | Observable<boolean> {
+    return true;
+  }
+}
+
+Fijate que la cli me trajo rxjs.Recuerda que debo devolver o un true o una Promise que se resuelva a boleano o un Observable
+
+IMPORTANTE: cuando use mis guards personalizados no tengo que llamarlos con ():
+
+  @Get('private2')
+  @SetMetadata('roles',['admin','user'])
+  @UseGuards(AuthGuard(),UserRoleGuard) <- ojo que es UserRoleGuard, sin ()
+  privateRoute2(
+    @GetUser() user: User,
+  ){
+    return {
+      ok:true,
+      user
+    }
+  }
+
+También podría haber usado new UserRoleGuard() pero esto crear una nueva instancia,es por esto que debo pasarle el nombre de la clase.Nest ya se encarga de que sea Singleton
+Y cabe destacar que los Guards están en la Exception Zone,asi que puedo lanzar excepciones de Nest en el Guard
+
+Para obtener la metadata de @SetMetadata voy a tener que inyectar la clase Reflector en el Guard(viene de @nestjs/core)
+NOTA: Reflector ayuda a ver información de los decoradores y otra información más.
+
+import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { Observable } from 'rxjs';
+
+@Injectable()
+export class UserRoleGuard implements CanActivate {
+  constructor( private readonly reflector:Reflector){}
+
+  canActivate( context: ExecutionContext,): boolean | Promise<boolean> | Observable<boolean> {
+    // accedo a @setMetadata con el objeto Reflector
+    const validRoles: string[] = this.reflector.get('roles', context.getHandler())
+    console.log({validRoles})
+    return true;
+  }
+}
+
+Fijate que veo el arreglo que me inventé con @SetMetadata(key,values).Asi que puedo pasar lo que quiera realmente al Guard.Genial.
+
+			VIDEO 179 VERIFICAR ROL DEL USUARIO
+
+Obviamente nos quedaba validar el rol del usuario contra los permitidos que nos hemos inventado.Realmente desde aqui es bastante sencillo,ya que fijate que canActivate recibe el context que es de tipo ExecutionContext,el cual ya sabemos como obtener la request y tenemos pegado el user a ella:
+
+   if(!user) throw new BadRequestException(`User not found`)
+
+    for (const role of user.roles) {
+      if(validRoles.includes(role)){
+        return true
+      }
+    }
+     
+     throw new ForbiddenException(`User ${user.fullName} needs a valid role for this request: [${validRoles}]`)
+  }
+
+No vamos a retornar false sino un 403.
+
+			VIDEO 180 CUSTOM DECORATOR - ROLE PROTECTED
+
+Vamos a crear un custom decorator que nos ayude a establecer el arreglo de los roles y controlar todo mejor.
+Como no es un decorador de propiedad,sino de método puedo usar la cli:
+>nest g d auth/decorators/roleProtected --no-spec <- fijate que es d o decorator
+
+Creará esto por defecto:
+import { SetMetadata } from '@nestjs/common';
+
+export const RoleProtected = (...args: string[]) => {
+  return SetMetadata('role-protected', args);
+};
+
+Creamos una enum tmb(memoriza que asigno con igual en una enum):
+export enum ValidRoles {
+  admin = 'admin',
+  superUser = 'superuser',
+  user = 'user',
+}
+
+Ahora ya no es un arreglo de strings sino de ValidRoles:
+
+export const META_ROLES = 'roles'
+
+export const RoleProtected = (...args: ValidRoles[]) => {
+  return SetMetadata(META_ROLES, args);
+};
+
+Ahora ya si puedo ir al controlador y usar mi decorador:
+
+  @Get('private2')
+  // @SetMetadata('roles',['admin','superuser'])
+  @RoleProtected(ValidRoles.superUser)
+  @UseGuards(AuthGuard(),UserRoleGuard)
+  privateRoute2(
+    @GetUser() user: User,
+  ){
+    return {
+      ok:true,
+      user
+    }
+  }
+
+Desde luego es mucho más limpio y legible.Fijate que no requirió de hacer nada en el módulo(diria que la clave es el return del SetMetadata en la función)
+
+				VIDEO 181 COMPOSICIÓN DE DECORADORES
+
+Realmente tenemos demasiados decoradores.¿Qué tal si creamos uno solo?.Para realizar esto necesitaremos la feature Decorator composition de Nest.Perfecto.
+
+Si bien esta todo en la doc,la clave es el método applyDecorators,logicamente:
+
+** Fusionar varios decoradores en uno
+import { applyDecorators, UseGuards } from "@nestjs/common";
+import { AuthGuard } from "@nestjs/passport";
+import { UserRoleGuard } from "../guards/user-role.guard";
+import { ValidRoles } from "../interfaces/valid-roles";
+import { RoleProtected } from "./role-protected.decorator";
+
+
+export function Auth(...roles:ValidRoles[]){
+  // en este punto tengo que declarar mis decoradores a juntar sin la '@'
+  return applyDecorators(
+    RoleProtected(ValidRoles.superUser,ValidRoles.user),
+    UseGuards(AuthGuard(),UserRoleGuard)
+  )
+}
+
+Al final queda algo tan bello como esto:
+  @Get('private3')
+  @Auth(ValidRoles.admin,ValidRoles.user)
+  privateRoute3(
+    @GetUser() user: User,
+  ){
+    return {
+      ok:true,
+      user
+    }
+  }
+
+Desde luego esta feature de unir decoradores pinta terrible.Obviamente funciona bien,deja pasar si no hay roles y no deja si si los hay y no concuerdan.
+Y dado que este decorador es tan fancy,lo suyo sería poder usarlo en cualquier módulo.
+
+			VIDEO 182 USAR DECORATOR @AUTH EN OTROS MODULOS
+
+Dado que en una aplicación de Nest cada módulo está encapsulado no voy a poder usar este Custom decorator en mi modulo Seed,por ejemplo.
+
+Sin embargo este decorator tiene a su vez dependencias de PassportModule y de JwtStrategy:
+
+exports: [TypeOrmModule, JwtStrategy, PassportModule, JwtModule],
+
+Y por eso lo que vamos a hacer es importar todo este modulo Auth:
+
+En el seeds.module:
+
+imports:[ProductModule,AuthModule]
+
+Y ya puedo proteger la carga inicial de datos a solo admins:
+
+  @Get()
+  @Auth(ValidRoles.admin)
+  executeSeed() {
+    return this.seedService.runSeed();
+  }
+
+Amazing spiderman
+Y por eso lo que vamos a hacer es importar todo este modulo Auth:
+
+En el seeds.module:
+
+imports:[ProductModule,AuthModule]
+
+Y ya puedo proteger la carga inicial de datos a solo admins:
+
+  @Get()
+  @Auth(ValidRoles.admin)
+  executeSeed() {
+    return this.seedService.runSeed();
+  }
+
+Amazing spiderman.Mismo procedimiento para el GetAllProducts:
+
+  @Get()
+  @Auth(ValidRoles.admin)
+  findAll(@Query() pDto:PaginationDto) {
+    return this.productsService.findAll(pDto);
+  }
+
+Resumen,importar todo el MOdulo por su alto acople a las deps.
+
+			VIDEO 183 VER EL USUARIO QUE CREÓ EL PRODUCTO
+
+Seria útil saber que usuario creó el producto.Fijate que un usuario puede crear muchos productos,pero un producto solo puede ser creado por un usuario:
+
+En la entidad User apuntamos al campo producto
+  @OneToMany(() => Product, (product) => product.user)
+
+Mientras que en la entidad de Product es al revés:
+ @ManyToOne(
+    () => User,
+    (user) => user.product,
+    {eager:true}
+  )
+  user:User;
+
+En este momento vamos a borrar toda la data inicial,ya que vino sin un user relacionado.Mandaremos un user al crear el producto:
+
+
+  @Post()
+  // @Auth(ValidRoles.admin)
+  @HttpCode(HttpStatus.CREATED)
+  create(
+   @Body() createProductDto: CreateProductDto,
+   @GetUser() user: User) {
+    return this.productsService.create(createProductDto,user);
+  }
+
+Habrá que controlar esto en el servicio,etc:
+
+  async create(createProductDto: CreateProductDto, user: User) {
+    
+    try {
+      const { images = [], ...productDetails } = createProductDto;
+
+      if (!createProductDto.slug) {
+        createProductDto.slug = createProductDto.title
+          .toLowerCase()
+          .replaceAll(' ', '_')
+          .replaceAll("'", '');
+      }
+      const product = this.productRepository.create({
+        ...productDetails,
+        images: images.map((image) =>
+          this.productImageRepository.create({ url: image }),
+        ),
+        user
+      });
+
+      await this.productRepository.save(product);
+
+		VIDEO 185 ARREGLAR EL SEED DE USUARIOS
+
+Dado que en el seed llamamos al create necesitamos un user antes.Fijate que son los productos los que mantienen la integridad referencial con el Usuario(si borró un producto voy a poder borrar el usuario).
+
+Solo era borrar todo en orden,crear los usuarios antes y despues los productos con un user válido:
+
+
+  private async deleteTables() {
+    // los productos mantienen la integridad referencial con el usuario,ya que si un usuario tiene productos no puede borrarse,tengo que borrar todos los productos primero entonces
+    await this.productsService.deleteAllProducts();
+    // ahora ya puedo eliminar los users
+    const queryBuilder = this.userRepository.createQueryBuilder();
+    await queryBuilder.delete().where({}).execute(); // destrucción!!
+  }
+
+  private async insertUsers() {
+    const seedUsers = initialData.users;
+    const users: User[] = [];
+
+    seedUsers.forEach((user) => {
+      user.password = bcrypt.hashSync(user.password,10)
+      users.push(this.userRepository.create(user));
+    });
+    const dbUsers = await this.userRepository.save(users);
+    console.log(dbUsers[0].roles)
+    return dbUsers[0];
+  }
+
+  private async insertNewProducts(user:User) {
+    this.productsService.deleteAllProducts();
+
+    const products = initialData.products;
+
+    const insertPromises = [];
+
+    products.forEach((product) => {
+      insertPromises.push(
+        this.productsService.create(product, user),
+      );
+    });
+
+    await Promise.all(insertPromises);
+
+    return true;
+  }
+}
+
+				VIDEO 187 CHECK AUTH STATUS
+
+Nos falta refrescar el token(cuando el usuario haga refresh debe revalidarlo si el token es válido).Será un Get que recibirá el user(recuerda que nuestro @Get nos trae el user del token):
+
+
+  @Get('check-status')
+  @Auth()
+  checkAuthStatus(@GetUser() user: User) {
+    return this.authService.checkAuthStatus(user);
+  }
+
+Y dado que el decorador acaba de chequear todo simplemente puedo refrescar el token,ya que el verify del token lo ha chequeado todo:
+
+  async checkAuthStatus(user: User) {
+      return {
+        ...user,
+        token: this.getJwtToken({ id: user.id }),
+      };
+  }
+
+ 
