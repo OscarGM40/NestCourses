@@ -423,4 +423,228 @@ Obviamente falta la parte del server.Es aqui donde entra un decorador nuevo en N
 
 			VIDEO 210 MÁS FORMAS DE EMITIR DESDE EL SERVIDOR
 
+En este punto,en el que tengo a los clientes identificados y unidos al socket server y recibiendo el mensaje del cliente tengo que decidir si usaré salas o a quien voy a devolver ese mensaje.Normalmente lo devolveré a alguién en concreto.
+
+1- Puedo unir un cliente a una sala con client.join('sala 1').FH suele usar el id del cliente o el email como string identificador de la sala
+
+2- Puedo emitir al cliente solo,a todos menos al cliente,a todos incluyendo el cliente inicial o a un cliente en concreto:
+  this.wss.emit() <- emite a todos
+  this.wss.to('room') <- emite a una sala solo
+  client.emit() <- emite solo al mismo cliente
+  client.broadcast.emit() <- emite a todos menos al cliente inicial
+
+Con todo esto en mente mandamos al resto el mensaje,no es importante ahora:
+ @SubscribeMessage('message-from-client')
+  onMessageFromClient(client: Socket, payload: NewMessageDto) {
+     client.broadcast.emit('message-from-server',{
+      fullName: 'Soy yo',
+      message: payload.message || 'no-message!!'
+    }) 
+  }
+
+Y el cliente agrega un simple <li>:
+  socket.on("message-from-server", (payload: { fullName: string; message: string }) => {
+    const newMessage = `
+      <li>
+        <strong>${payload.fullName}</strong
+        <span>${payload.message}</span>
+      </li>`;
+    const li = document.createElement("li");
+    li.innerHTML = newMessage;
+    messagesUl.appendChild(li);
+  });
+
+			VIDEO 211 PREPARAR CLIENTE PARA RECIBIR EL JWT
+
+Vamos a hacer de nuevo algo muy básico,con un input y un botón:
+* En el Html
+    <input id="jwt-token" placeholder="Json Web Token" />
+    <button id="btn-connect">Connect</button>
+    <br />
+
+Rescato el DOM
+const jwtToken = document.querySelector<HTMLInputElement>('#jwt-token')!;
+const btnConnect = document.querySelector<HTMLButtonElement>('#btn-connect')!;
+
+* Y mando el token(que será un simple string) al método
+btnConnect.addEventListener('click',() => {
+  if(jwtToken.value.trim().length <= 0) return alert('Enter a valid JWT')
+   connectToServer(jwtToken.value);
+})
+
+* Con ese string puedo mandarlo en un header extra,por ejemplo
+export const connectToServer = (jwtToken: string) => {
+  // me conecto a la URL que me ofrecieron en la doc
+  const manager = new Manager("http://localhost:3000/socket.io/socket.io.js",{
+    extraHeaders:{ authentication: jwtToken }
+  });
+
+Y obviamente lo tengo en el server desde el primer momento:
+  handleConnection(client: Socket, ...args: any[]) {
+    // recuerda que el header extra estará en handshake.headers.xxx
+    const token = client.handshake.headers.authentication as string;
+   console.log(token)
+
+Si mando algo en el input para el token lo debería ver como header y asi es.Aun falta hacer algo con esto,como comprobar que sea realmente un JWT o extraerle el payload(recuerda que tenemos dos usuarios en PostgreSQL
+
+			VIDEO 212 VALIDAR JWT DEL HANDSHAKE 
+
+TIP: handshake es apretón de manos en inglés.Se llama asi como simil a lo que hacen front y back al comunicarse.
+Bien,dado que vamos a verificar el token lo primero es inyectar el servicio desde @nestjs/jwt:
+
+@WebSocketGateway({cors:true})
+export class MessageWsGateway implements OnGatewayConnection,OnGatewayDisconnect{ 
+  @WebSocketServer wss:Server;
+
+  constructor(
+    private readonly messageWsService: MessageWsService, <- servicio interno
+    private readonly jwtService: JwtService
+
+Esto dará un error,ya que no hemos declarado el servicio en el módulo en los providers.Sin embargo,dado que vamos a necesitar más cosas que sólo el servicio es mejor importar el módulo AuthModule(esta vez en el array de imports):
+
+@Module({
+  providers: [MessageWsGateway, MessageWsService],
+  imports: [AuthModule]
+})
+export class MessageWsModule {}
+
+* Fijate que en este módulo tenemos el ORM tmb,los DTOs.
+
+IMPORTANTE: dado que no estoy en un controlador no puedo usar las excepciones buit-in anteriores como HttpException,sin embargo,si que tengo anotada la clase con el decorador  @WebSocketGateway y estoy en la ExceptionZone,solo que tengo que lanzar otras clases:
+
+  throw new WsException('Invalid credentials');
+
+HINT: Esta clase WsException viene de la lib @nestjs/websockets
+
+Sin embargo,a Fernando no le gusta mucho como maneja esta clase los errores asi que lo haremos manualmente.
+
+  handleConnection(client: Socket, ...args: any[]) {
+    const token = client.handshake.headers.authentication as string;
+    let payload: JwtPayload;
+
+    try {
+      payload = this.jwtService.verify(token);
+    } catch (error) {
+      return client.disconnect();
+    }
+
+    console.log({ payload });
+
+Recuerda que saco el payload con verify,y que sólo guardamos el id(lo puedo ver en JwtPayload)
+Si voy a Postman puedo coger el jwt y ver en consola el id del usuario,con el que ya puedo crear salas:
+
+{
+  payload: {
+    id: 'f7db731c-ce72-45f9-9519-9ded30e917a9',
+    iat: 1667641057,
+    exp: 1667648257
+  }
+}
+
+También podemos acceder al nombre del usuario y mostrarlo en cada mensaje
+
+		VIDEO 213 ENLAZAR SOCKET CON NOMBRE E ID DEL USUARIO
+
+Ya que tenemos el id tras sacarlo del payload del token lo mandamos al registerClient inicial:
+ this.messageWsService.registerClient(client,payload.id);
+
+import { InjectRepository } from '@nestjs/typeorm';
+import { Socket } from 'socket.io';
+import { User } from 'src/auth/entities/user.entity';
+import { Repository } from 'typeorm';
+
+interface ConnectedClients { [id: string]: Socket; }
+
+@Injectable()
+export class MessageWsService {
+  private connectedClients: ConnectedClients = {};
+
+  constructor(
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+  ) {}
+
+recuerda que el servicio iba anotado con @InjectRepository(Model)
+
+Bien,con todo esto vamos a cambiar la data almacenada por esto:
+
+interface ConnectedClients {
+  [id: string]: {
+    socket: Socket;
+    user: User;
+  };
+}
+
+Y en el register lo llenamos:
+  async registerClient(client: Socket, userId: string) {
+    const user = await this.userRepository.findOneBy({ id: userId });
+    if (!user) throw new Error('User not found');
+    if (!user.isActive) throw new Error('User not active');
+
+    this.connectedClients[client.id] = {
+      socket: client,
+      user: user,
+    };
+  }
+
+También creamos un getter para el fullName por socketId:
+  
+getUserFullNameBySocketId(socketId: string): string {
+    return this.connectedClients[socketId].user.fullName;
+  }
+
+          VIDEO 214 DESCONECTAR USUARIOS DUPLICADOS
+
+No vamos a permitir que ningun usuario bajo ninguna circunstancia tenga dos instancias del chat activas(aunque fijate que en la realidad pudiera ser que quiera tener una en el desktop y otra en el mobile)
+
+
+Si bien esto es medianamente sencillo:
+
+  private checkUserConnection(user:User){
+    for (const clientId of Object.keys(this.connectedClients)) {
+      const connectedClient = this.connectedClients[clientId];
+      if (connectedClient.user.id === user.id){
+        connectedClient.socket.disconnect();
+        break;
+      }
+    }
+  }
+tenemos un problema en el front y es que al crear una nueva instancia de Manager no estamos limpiando los listeners que estamos creando y vemos 'disconnect'.
+Afortunadamente la gente de SocketIO sabe que es muy fácil que se de este caso de crear y cerrar muchas conexiones en una app,y por ello crear un montón de listeners y nos provee de dos métodos(removeAllListener o removeLIstener(listener):
+
+Sin embargo tenemos otro pequeño problema y es que necesito elevar el socket afuera del método para tenerlo ya antes de crearlo y si es asi(es decir,si no es undefinded que el removeAllListener apunte a él y limpie todo):
+
+let socket: Socket;
+
+export const connectToServer = (jwtToken: string) => {
+  const manager = new Manager("http://localhost:3000/socket.io/socket.io.js",{
+    extraHeaders:{
+      authentication: jwtToken
+    }
+  });
+
+  socket?.removeAllListeners();
+  socket = manager.socket("/");
+
+* fijate que let socket:Socket la variable socket es undefined hasta que la asigne,pero la segunda vez no lo será y por ello entra el socket?.removeAllListeners().Solución sencilla y pro.Recuerda que cualquier variable nace undefined si no la asigno.
+
+			SECCION 16 DESPLIEGUE A PRODUCCIÓN DEL BACK Y EL FRONT 
+
+Esta sección trabajaremos en desplegar todo el backend y frontend, pero puntualmente aprenderemos:
+
+1- Heroku CLI
+2- Logs y Tails de logs
+3- Manejo de errores en producción
+4- Configuración de variables de entorno
+5- Postgres en la nube
+6- Despliegue en Netlify
+7- Pruebas de aplicación
+8- CORS
+9- Generar build de producción VITE
+10- y mucho más
+
+Espero que esta sección les guste mucho y nos vemos en el siguiente video!! :D
+
+
+
 
