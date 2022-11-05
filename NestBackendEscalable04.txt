@@ -49,9 +49,378 @@ async function bootstrap() {
 }
 bootstrap();
 
-Fijate que al final no usamos addTag aqui,pues sería la misma tag para todos,tagearemos desde la clase.Fijate tmb que lo sirve en setup('api'),es decir en /api,al cual puedo ir ya(o cambiarlo si quisiera)
+Fijate que al final no usamos addTag aqui,pues sería la misma tag para todos,tagearemos desde la clase.Fijate tmb que lo sirve en setup('api'),es decir en /api,al cual puedo ir ya(o cambiarlo si quisiera).Para arrancar necesito llamar al setup,claro.
+
 Realmente puedo ver que falta mucha info(de ahí lo de semiautomático).Hay que ir a cada controller y darle más info mediante decoradores.
+NOTA: OpenAPI es agnostico al lenguaje y framework.Puedo documentar una API en Java,en Next o Nest,express,etc
 
 				VIDEO 194 Tags, ApiProperty y ApiResponse
+
+Recuerda que los tags no son más que simples agrupadores(un nombre para el grupo).
+NOTA: fijate que ahora mismo están todos los controladores bajo la tag 'default'.Obviamente debo agruparlos en grupos con un nombre coherente.
+
+Empiezo por los products.Necesitaré el decorador @ApiTags(tag:string) de @nest/swagger:
+@ApiTags('Products')
+@Controller('products')
+export class ProductsController {
+
+Continuo con @ApiTags('Auth') y el resto.Pero todavia nos queda el asunto de los statusCode y el tipo de Response de cada Controller.
+
+Para los statusCode tengo que ir por cada controlador con el decorador @ApiResponse(options:{}) que lleva un objeto de opciones configurables:
+
+  @ApiResponse({ status: 201, description: 'Product was created', type: Product })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+  @ApiResponse({ status: 403, description: 'Forbidden. Token related' })
+  create(@Body() createProductDto: CreateProductDto, @GetUser() user: User) {
+    return this.productsService.create(createProductDto, user);
+  }
+
+Por ejemplo puedo documentar el 201,el 400 y el 403.Sin embargo no vale sólo con el type,pues también tengo que anotar cada una de las propiedades de ese type en la entidad,usando el decorador @ApiProperty():
+
+
+  @ApiProperty()
+  @Column('text', { array: true, })
+  sizes: string[];
+  
+  @ApiProperty()
+  @Column({ type: 'text' })
+  gender: string;
+  
+  @ApiProperty()
+  @Column({ type: 'text', array:true, default: [] })
+  tags: string[]; @ApiProperty()
+  @Column('text', { array: true, })
+  sizes: string[];
+  
+  @ApiProperty()
+  @Column({ type: 'text' })
+  gender: string;
+  
+  @ApiProperty()
+  @Column({ type: 'text', array:true, default: [] })
+  tags: string[];
+
+Puedo ver que esto dará un tipado inicial a la response.Sin embargo,debo expandir esta documentación pues el id no es un string,sino un uuid,etc:
+
+{
+  "id": "string",
+  "title": "string",
+  "price": 0,
+  "description": "string",
+  "slug": "string",
+  "stock": 0,
+  "sizes": [
+    "string"
+  ],
+  "gender": "string",
+  "tags": [
+    "string"
+  ],
+  "images": [
+    "string"
+  ]
+}
+
+Usaremos el decorador expandiendo su argumento que es un objeto de opciones.
+
+		VIDEO 195 EXPANDIENDO EL DECORADOR APIPROPERTY
+
+Realmente es ir por cada propiedad de la entidad y darle un ejemplo,descripcion,si es nullable,única,etc
+
+  @ApiProperty({
+    example:'t-shirt_testlo',
+    description: 'Product SLUG -for SEO improvement',
+    uniqueItems: true,
+  })
+  @Column({ type: 'text', unique: true })
+  slug: string;
+
+  @ApiProperty({
+    example: 10,
+    description: 'Product units remaining stock',
+    default:0
+  })
+  @Column('int', { default: 0 })
+  stock: number;
+
+En la siguiente clase veremos como hacer algo parecido con los DTO,con rutas que admiten queryParams.
+
+				VIDEO 196 DOCUMENTAR DTOS	
+
+Documentar DTOs es algo fundamental,ya que son el core de todo.Si el backend necesita un body de una forma concreta debe estar documentado:
+
+  @ApiProperty({default:10,description:'How many rows do you need',required:false})
+  @IsInt() @IsPositive() @IsOptional() @Type( () => Number)
+  limit?: number;
+
+ @ApiProperty({default:0,description:'How many rows do want to skip',required:false}) 
+  @Min(0) @IsOptional() @Type( () => Number)
+  offset?: number;
+
+Hago lo mismo con el CreateProductDto:
+  @ApiProperty({
+    description: 'Product title',
+    uniqueItems:true,
+    nullable:false,
+    minLength:1
+  })
+  @IsString()
+  @MinLength(3, { message: 'title must have at least 3 ch' })
+  title: string;
+
+  @ApiProperty()
+  @IsNumber()
+  @IsPositive()
+  price: number;
+
+Fijate que abajo tengo la opción de Schemas,los cuales debo tipar.Obviamente esto es algo muy muy básico.
+
+IMPORANTE: si me traigo la clase PartialType de Swagger se pasará automáticamente el tipado desde la superclase a la subclase,algo que quiero hacer en UpdateProductDto:
+
+// import { PartialType } from '@nestjs/mapped-types';
+import { PartialType } from '@nestjs/swagger';
+import { CreateProductDto } from './create-product.dto';
+
+export class UpdateProductDto extends PartialType(CreateProductDto) {}
+
+Para ella basta cambiar la clase que no sea la de mapped-types sino la de swagger y pasarán los decoradores(importante).
+
+NOTA: recuerda que tengo un enlace a la documentación a OpenAPI(para Swagger)
+
+@ApiBody({ type: [CreateUserDto] }) <- cuando sea un array de objetos
+@ApiProperty({ enum: ['Admin', 'Moderator', 'User']}) <- para enums
+
+
+					SECCION 15 WEBSOCKETS
+
+Vamos a usar SocketIO para comunicacion en tiempo real en Nest.Nest ya viene con una libreria nativa para RTC.
+
+Esta sección tiene información sobre la comunicación entre cliente y servidor mediante WebSockets, puntualmente veremos:
+
+1- Nest Gateways
+2- Conexiones
+3- Desconexiones
+4- Emitir y escuchar mensajes desde el servidor y cliente
+5- Cliente con Vite y TS
+6- Autenticar conexión mediante JWTs
+7- Usar mismo mecanismos de autenticación previamente creado
+8- Desconectar sockets manualmente
+9- Prevenir doble conexión de usuarios autenticados.
+
+Fijate que los Nest Gateways son muy importantes.
+
+				VIDEO 202-203 WEBSOCKETS GATEWAYS
+
+Vamos a implementar WebSockets en nuestro Teslo-Shop.Fijate que en este punto tengo que habilitar las CORS en el servidor para que el front pueda comunicarse.
+Esto se debe hacer siempre que el front esté en un hosting/host diferente(fijate que un back en localhost:8000 y un front en localhost:8001 son dos host diferentes y entraria el CORS)
+Para habilitar el Cors se usa:
+
+const app = await NestFactory.create(AppModule);
+app.enableCors(options) <- o simplemente app.enableCors() si no voy a pasar opciones lo cual obviamente no es nada recomendable abrir a todos
+
+Para la parte de los WebSockets tengo un decorador ya:
+@WebSocketGateway({cors:true});
+
+Recuerda que sólo si tengo el front en la carpeta public del back(lo cual es bien extrañ) es que no tengo que abrir los CORS.Usualmente el front no suele estar embebida en el back por motivos obvios.
+
+NOTA: la comunicación de WebSockets es una comunicacion activo-activo,es decir que el back tmb puedo comunicar
+
+En Nest, un gateway es simplemente una clase anotada con el decorador ya mencionado @WebSocketGateway().
+
+HINT: hay dos plataformas muy comunes en RTC que son SocketIO y WS(WebSocket).Al usar el decorador puedo elegir entre cualquier implementación,ya que se pone por encima.en resumen un Gateway lo usaré como un controlador.
+
+Ahora ya si,creemos un nuevo recurso con nestcli:
+>nest g res messageWs --no-spec (y eligo WebSocket)
+
+NOTA: en este punto veré que necesito instalar dos librerias(la core y esta):
+import { WebSocketGateway } from '@nestjs/websockets'; <- son dos,ojo
+import { MessageWsService } from './message-ws.service';
+
+@WebSocketGateway()
+export class MessageWsGateway {
+  constructor(private readonly messageWsService: MessageWsService) {}
+}
+
+Asi pues instalo la core y la impl:
+>npm i @nestjs/websockets @nestjs/platform-socket.io
+
+Y por último recuerda que debo abrir los cors y lo puedo hacer desde el decorador:
+
+@WebSocketGateway({cors:true}) <- añadir cors a true
+export class MessageWsGateway {
+  constructor(private readonly messageWsService: MessageWsService) {}
+}
+HINT: en este punto puedo hacer un GET a la libreria apuntando a =>
+{{LOCALHOST-3000}}/socket.io/socket.io.js y deberia darme el javascript
+
+		VIDEO 204 ESCUCHAR CONEXIONES/DESCONEXIONES DESDE EL SERVER
+
+Debe quedar bien claro ya que el server es la app de Nest y el cliente una aplicción web o una móvil que se conecta a este servidor.
+También debe quedar claro que simplemente vamos a ver la implementación de WebSockets sobre Nest y que debo tener claro sus fundamentos que son agnósticos al fwk.
+
+Con esto en mente puedo ver que el namespace es un nombre para un canal concreto al que conectarse:
+@WebSocketGateway({cors:true, namespace: 'sala01'}) <- este controlador solo valdria para ese canal.Debo tener bien claro el concepto de namespace 
+
+IMPORTANTE: para poder saber el Id del cliente tanto al conectarse como al desconectarse tengo que implementar dos interfaces,OnGatewayConnection y OnGatewayDisconnect.Obviamente tengo que desarrollar sus métodos abstractos:
+
+@WebSocketGateway({ cors: true })
+export class MessageWsGateway
+  implements OnGatewayConnection, OnGatewayDisconnect
+{
+  constructor(private readonly messageWsService: MessageWsService) {}
+  handleConnection(client: any, ...args: any[]) {
+    throw new Error('Method not implemented.');
+  }
+  handleDisconnect(client: any) {
+    throw new Error('Method not implemented.');
+  }
+}
+
+HINT: en este punto FH recomienda instalar socket.io para quitar ese any del argumento client de ambos métodos abstractos:
+
+>yarn add socket.io
+
+import { Socket } from 'socket.io';
+import { MessageWsService } from './message-ws.service';
+
+@WebSocketGateway({ cors: true })
+export class MessageWsGateway
+  implements OnGatewayConnection, OnGatewayDisconnect
+{
+  constructor(private readonly messageWsService: MessageWsService) {}
+  
+  handleConnection(client: Socket, ...args: any[]) {
+    console.log('Cliente conectado',client.id);
+  }
+  handleDisconnect(client: Socket) {
+    console.log('Cliente desconectado',client.id);
+}
+}
+
+En este punto tenemos que crear un front que se conecte,claro.
+
+			VIDEO 205 CLIENTE - APP CON VITE Y VANILLA TS
+
+Creamos una app con yarn create vite de simplemente TS.IMPORTANTE,hay que instalar en el cliente la impl de socket pero para el cliente:
+>yarn add socket.io-client
+
+HINT: en este punto recuerda que debo comprobar que ambas librerias,tanto la impl del back como la del front puedan trabajar juntas(misma versión,etc)
+ 
+Tras instalar todo apunto a la URL y creo el socket del cliente,algo realmente sencillo:
+
+import { Manager } from "socket.io-client";
+
+export const connectToServer = () => {
+  
+  // me conecto a la URL que me ofrecieron
+  const manager = new Manager("http://localhost:3000/socket.io/socket.io.js");
+  // nos conectamos al namespace '/' que es el por defecto y guardo la conexión
+  const socket = manager.socket("/");
+  
+};
+* Recuerda que todos los clientes se conectan al servidor en una relacion n a 1 y es el servidor el que despues responde.
+Ahora ya si,tengo el back y front enlazado por el socket server:
+
+[Nest] 694296  - 03/11/2022, 19:36:47     LOG [Bootstrap] Nest running on port 3000
+Cliente conectado con id T7rxehjkb7Q62Tp5AAAB
+Cliente desconectado con id T7rxehjkb7Q62Tp5AAAB
+Cliente conectado con id PmE3jUG-e9hSw30xAAAD
+Cliente desconectado con id PmE3jUG-e9hSw30xAAAD
+Cliente conectado con id _3UghB7nlB-l_zAKAAAF
+
+Fijate que en el back fueron un par de librerias,el decorador e implementar dos interfaces y desarrollar sus métodos abstractos mientras que en el front aun es más sencillo,con sólo las librerias y un método.Obviamente,esto será mucho más complejo en algo real.
+
+		VIDEO 206 RESCATAR LOS IDS EN EL SERVER
+
+Obviamente el primer paso es mantener identificado a cada cliente de forma precisa,lo cual podemos hacer con el id único que estamos recibiendo,claro
+
+Lo primero será crear la interface,despues es solo agregar una nueva entrada:
+
+interface ConnectedClients {
+  [id: string]: Socket;
+}
+
+@Injectable()
+export class MessageWsService {
+
+  private connectedClients: ConnectedClients = {};
+
+  registerClient(client: Socket) {
+    this.connectedClients[client.id] = client;
+  }
+
+  removeClient(clientId: string) {
+    delete this.connectedClients[clientId];
+  }
+
+  getConnectedClients():number {
+  return Object.keys(this.connectedClients).length    
+  }
+  
+}
+Fijate en el uso de [id:string]: Socket.Esto es muy interesante y casi nunca lo uso,debo pensar más en ello
+
+		VIDEO 207 DETECTAR CONEXION Y DESCONEXION EN EL CLIENTE
+
+Lo siguiente sería hacer lo mismo pero en el cliente,para de esta forma ya poder empezar a mostrar algo gráficamente en base a si está conectado o desconectado un cliente.
+
+Para esto ya tenemos los eventos 'connect' y 'disconnect' propios de la libreria:
+
+
+const addListeners = (socket: Socket) => {
+  const serverStatusLabel = document.querySelector('#server-status')!;
+  // on para escuchar al server,emit para emitir al server
+  socket.on('connect', () => {
+    serverStatusLabel.innerHTML = 'connected'
+  })
+  
+  socket.on('disconnect', () => {
+    serverStatusLabel.innerHTML = 'disconnected'
+  })
+  
+}
+
+Lo siguiente es identificar a los clientes,para ello el server tiene que emitir a cada cliente si se conectó otro(para ello mandaremos todos los ids).Fijate que para esto ya me dan un decorador donde almacenar la instancia de  WebSocketServer:
+
+import {
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+  WebSocketGateway,
+  WebSocketServer,
+} from '@nestjs/websockets';
+
+export class xxx implements xxx,xxx {
+  @WebSocketServer() wss: Server; <- propiedad de clase
+
+    // en el server wss.emit('eventName',payload) emite a todos
+    this.wss.emit('clients-updated',this.messageWsService.getConnectedClients())
+
+Fijate que el decorador va a nivel de propiedad
+
+		VIDEO 209 EMITIENDO DESDE EL CLIENTE Y ESCUCHANDO DESDE EL SERVER
+
+Hagamos algo más interesante como que el usuario emita el texto de un input hacia un usuario en particular.
+Habrá que usar un form y un input y rescatarlos del DOM:
+
+  messageForm.addEventListener("submit", (event) => {
+    event?.preventDefault();
+    if (messageInput.value.trim().length <= 0) return;
+
+    socket.emit("message-from-client", {
+      id: "yo!",
+      message: messageInput.value,
+    });
+  });
+
+Obviamente falta la parte del server.Es aqui donde entra un decorador nuevo en Nest para suscribirse a un evento mandado desde el client,y es @SubscribeMessage
+
+  @SubscribeMessage('message-from-client')
+  handleMessageFromClient(client: Socket, payload: NewMessageDto) {
+    console.log(client.id,payload)
+  }
+
+* Fijate que éste es un decorador de método
+
+			VIDEO 210 MÁS FORMAS DE EMITIR DESDE EL SERVIDOR
 
 
