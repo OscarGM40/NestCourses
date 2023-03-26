@@ -645,6 +645,75 @@ Esta sección trabajaremos en desplegar todo el backend y frontend, pero puntual
 
 Espero que esta sección les guste mucho y nos vemos en el siguiente video!! :D
 
+				VIDEO 219 DESPLIEGUE EN LA NUBE DE POSTGRES
 
+Heroku tiene una implementación de PostGres gratuita(500MB) asi que podemos usar esa plataforma.
+Para hacer esto hay que ir a la pestaña addons y dar en configure addons.Despues eligo Heroku-Postgres y eligo el plan Free(todo esto sobre una app backend).
+Despues voy en settings y ver credentials.Alli se me dará la password,el host,la database el user,el port,etc.
+
+			VIDEO 220 CONFIGURACIONES RESTANTES
+
+En este momento hay que realizar unos pequeños cambios ya que la DB ya no es el contenedor,sino que está en Heroku,y espera una conexión certificada(SSL??).
+Creamos una nueva env en el .env:
+
+STAGE=dev
+* Esta variable nos va a indicar en que ambiente estamos.Una vez creada vamos al auth.module y añadimos las propiedades ssl y extra:
+
+    TypeOrmModule.forRoot({
+      ssl: process.env.STAGE === 'prod',
+      extra: {
+        ssl:
+          process.env.STAGE === 'prod' ? { rejectUnauthorized: false } : null,
+      },
+      type: 'postgres',
+      host: process.env.DB_HOST,
+      port: +process.env.DB_PORT,
+      database: process.env.DB_NAME,
+      username: process.env.DB_USERNAME,
+      password: process.env.DB_PASSWORD,
+      autoLoadEntities:true,
+
+En el package.json el comando start lo cambio por el de producción pues hay que arrancar la app mediante node y no nest(recuerda que llamará al npm start):
+ "start": "node dist/main", <- antes era "nest start"
+
+También es bueno especificar a Heroku la versión de Node que queremos,esto lo hago con la propiedad engines:
+
+  "license": "UNLICENSED",
+  "engines": {
+    "node": "18.x" <- cualquier 18
+  },
+  "scripts": {
+    "prebuild": "rimraf dist",
+
+				VIDEO 221 DESPLEGAR APLICACION EN HEROKU
+
+Haremos el deployment mediante CLI.Lo primero es logearse con el comando(recuerda que abre un browser simplemente):
+>heroku login
+
+Despues preparo el repo que quiero subir con el commit y push y:
+>heroku git:remote -a teslo-nest <- donde <teslo-nest> es el nombre de la app
+
+Esto setea el remoto simplemente(es como git remote add,de ahi viene el -a).Es decir,que podría hacer el commit y todo esto despues.
+
+Una vez tengo todo,añadido el remoto para heroku,creado una DB en addons miro en que rama estoy y hago el push:
+>git push heroku <rama> (por ejemplo git push heroku main)
+
+*Aqui podria haber algun fallo,aunque no debería.Fijate que no hemos configurado las variables de entorno aún en la app,va a fallar la app.Puedo verlo con :
+>heroku logs --tail
+
+Veré obviamente el Unable to connect to the database.Eventualmente crasheará.
+
+
+IMPORTANTE: para configurar las variables de entorno es en settings y config vars.Alli agrego todas las necesarias,obviamente cambiando los valores por los de la DB agregada como add-on.
+
+				VIDEO 223 DESPLEGAR FRONTEND
+
+Vamos a desplegar el front en otro hosting(netlify) y asi ver los problemas de cors.
+Fijate que en el new Manager(url) habria que dejar de apuntar a local y apuntar al backend,que estaría en xxx.heroku.com.app o lo que sea).Vamos a netlify despues y subimos una app dejandola caer en el dropbox que lo hace solo.
+
+			FIN DE CURSO
+
+FH recalca que es posible ver como downside todo el montón de instalaciones y dependencias que hay que instalar según vamos desarrollando una app de nest(lo mismo puede pensarse de React).
+Sin embargo esto está echo asi para que tengamos aplicaciones más pequeñas,más fáciles de desplegar y de mantener y además cuando instalamos algo sabemos porqué lo necesitamos y porqué lo instalamos
 
 

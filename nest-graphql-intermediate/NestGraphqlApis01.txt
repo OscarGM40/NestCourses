@@ -1,0 +1,87 @@
+      SECCION 01 INTRODUCCION AL CURSO
+
+Las instalaciones recomendadas para este curso son:
+VS Code
+Postman
+Git
+Node
+Las imagenes de Postgres:14.3 y Mongo:5.0.0
+
+      SECCION 02 REFORZAMIENTO DE NEST
+
+Esta sección tiene por objetivo ser un reforzamiento y una auto-evaluación para determinar si necesitas un mayor reforzamiento.
+
+Idealmente todos los conceptos que usaré a continuación deben de ser familiares para ti, módulos, controlador, servicios, DTOs, etc.
+
+Si no es así, y sientes que todo es nuevo y complicado, te recomiendo que no continues con el curso y realiza mi primer curso de Nest, para tener la base que necesitas para entrar en este curso.
+
+      VIDEO 08 CREACION DE UN PROYECTO CON NEST
+
+Lo primero será instalar la cli:
+>npm i -g @nestjs/cli
+Despues podemos crear un nuevo proyecto con:
+>nest new project-name
+NOTA: puedo ver el linter como una serie de reglas que queremos que todos los desarrolladores en nuestro proyecto sigan.Si veo que da mucha guerra puedo desinstalar todas las librerias asociadas a él.
+>yarn remove prettier eslint-config-prettier eslint-plugin prettier
+
+            VIDEO 09 CRUD COMPLETO
+
+Como pequeño recordatorio tengo el pdf:
+>nest g cl <path/nombre>   <- genera una clase
+>nest g co <path/nombre>   <- generar un controlador
+>nest g d <path/nombre>    <- genera un decorador
+>nest g gu <path/nombre>    <- genera un guard
+>nest g in <path/nombre>    <- genera un interceptor
+>nest g mo <path/nombre>    <- genera un modulo
+>nest g pi <path/nombre>    <- genera un pipe
+>nest g s <path/nombre>    <- genera un servicio
+>nest g res <path/nombre>    <- genera un recurso completo
+
+Fijate que tenian la opcion de crear un crud completo con nest g res <name>
+Fijate que este comando crea un controlador,un servicio, dos dtos,un modulo,una entidad,actualizó el modulo exterior en el que cree el recurso con el import,etc.Amazing
+
+Un controlador en una REST API es quien escucha las solicitudes y emite respuestas.
+Un servicio usualmente están destinados a manejar la lógica de negocio de la aplicación.
+Un módulo basicamente es un simple agrupador de archivos.
+NOTA: recuerda que debo inyectar la instancia de los servicios en los controladores,y que Nest usará singletons
+
+El decorador @Param('id') rescata el segmento dinámico por ese name:
+@Get(':id') <- esto será /api/todo/3 por ejemplo
+findOne(@Param('id') id:string){
+      return this.todoService.findOne(+id)
+}
+Un Patch usará @Param y @Body por motivos obvios.Fijate que los controladores deben ser llamados,son funciones
+@Patch(':id')
+update(@Param('id') id:string, @Body() updateTodoDto: UpdateTodoDto){
+      ...
+}
+
+Dto significa Data Transfer Object.Estos objetos son utilizados para asegurarse que la informacion luce y  es transladada de un lugar a otro(normalmente entre server y front) con un formato correcto.Son como contratos entre back y front.
+
+Por último una Entity es una representación de como luce una entrada en la base de datos(registro si es relacional,documento si es no-relacional)
+
+            VIDEO 10 SELECCIONAR TODOS LOS ITEMS(TODOS)
+
+Recuerda que en Nest los Pipes me ayudan a transformar la información.Dado que todos los Params son strings y lo queremos como numero parece que lo mejor es usar un Pipe:
+
+import { ParseIntPipe } from "@nestjs/common"
+
+@Get('id')
+findOne(@Param('id',ParseIntPipe) id: number){
+      return this.todoService.findOne(id)
+}
+Esto es mucho mejor que lo que habia con el simple +id ya que si el Pipe falla al parsear ese segmento Nest va a capturar esa excepcion y a realizar lo que yo le diga(a diferencia del operador unario que es javascript puro).Desde luego es muy razonable usar este Pipe,asinto
+
+TIP: recuerda que este fmk destaca por su manejo de errores entre otras cosas,asi que si no encontraramos un recurso puedo lanzar sus custom Exceptions(en este caso lanzar un NotFoundException ya tira un 404):
+ 
+  findOne(id: number) {
+    const todo = this.todos.find((todo) => todo.id === id);
+    if (!todo) throw new NotFoundException(`TODO con id ${id} no encontrado`);
+    return todo;
+  }
+
+Seria buena idea migrar hacia Nest,asinto.
+
+            VIDEO 11 CREAR UN TODO
+
+            
