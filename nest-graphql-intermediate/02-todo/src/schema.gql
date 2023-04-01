@@ -1,0 +1,11 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+type Query {
+  """retorna un literal"""
+  hello: String!
+
+  """retorna un scalar Float entre 0 y 100"""
+  randomNumber: Float!
+}

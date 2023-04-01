@@ -84,4 +84,289 @@ Seria buena idea migrar hacia Nest,asinto.
 
             VIDEO 11 CREAR UN TODO
 
-            
+Recuerda que Nest no tiene validacion en los DTOs por arte de magia.Lo tengo en el PDF,estas dos librerias cumplen de momento:
+
+>yarn add class-validator class-transformer
+
+Algunos decoradores que expone la libreria class-validator son isOptional,isArray,isPositive,isUUID,isDateString  
+
+Tras instalar las librerias hay que configurar la app(en Nest en principio es en el main.ts)
+
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    }),
+  );
+
+Puedo ver perfectamente que es un Pipe Global de validacion(basicamente es activarlas).To forbid=prohibir
+
+{
+    "statusCode": 400,
+    "message": [
+        "property nombre should not exist"
+    ],
+    "error": "Bad Request"
+}
+
+Ahora ya con las validaciones interpretandolas el framework puedo usarlas donde necesite.Desde luego esto es primordial en una API.
+
+export class CreateTodoDto {
+  // que sea un string(con lo que no me pueden mandar numeros o objetos,interesante) y que no sea un string vacio
+  @IsString()
+  @IsNotEmpty()
+  description: string;
+}
+
+    VIDEO 12-13 UPDATE AND DELETE A TODO
+
+Simplemente crear la lógica para ambos controladores con el arreglo existente como mockData:
+
+remove(id: number) {
+  const todos = this.todos.filter((todo) => todo.id !== id);
+  return todos;
+}
+NOTA:recuerda que puedo abrir un componente JSX(y por ende un ReactNode y agregarle más props: (props) => <Component {...props} day={day}) siempre que tenga una property que pide un JSX de retorno(fijate que pedia un ReactNode la propiedad cellRenderer,mira mañana si pedia un JSX o un () => JSX)
+
+      SECCION 03 INTRO NEST + GRAPHQL
+
+Recuerda que el objetivo principal de un backend en GraphQL es darle todo el poder al desarrollador de front para que el mismo se autosirva los datos con sus propios endpoints personalizados.
+Esto ayuda muchisimo al desarrollador de backend en el mantenimiento de ese backend.
+Usaremos apollo-studio
+
+Esta es nuestra primera sección de GraphQL, en la cual tendremos una introducción a la tecnología y empezaremos con ciertos conceptos.
+Puntualmente veremos:
+
+1- GraphQL Playground
+2- Apollo Studio
+3- Diferentes GUIs para usar GraphQL
+4- Resolvers
+5- Args
+6- Queries
+7- Instalaciones en Nest
+
+Básicamente esto dejará las bases para poder seguir configurando y usando GraphQL en Nest, posteriormente estas configuraciones las haremos mucho más rápido, pero al inicio, quiero hacer todo paso a paso para comprender qué y el por qué de las mismas.
+
+      VIDEO 18 INTRODUCCION A GRAPHQL  CON NEST
+
+Docu de Graphql: https://graphql.org
+Docu de Nest con graphql: https://docs.nestjs.com/graphql
+
+GraphQL es un lenguaje para leer y mutar data mediante APIs(es una forma de hacer queries a una API).Es totalmente agnóstico al lenguaje,con lo que la sintaxis dará igual si estoy en Go o PhP(sólo la sintaxis de GraphQL claro).
+
+type Astronaut { <- siempre se usa 'type' para declarar un tipo ??
+  id: ID!
+  callsign: String!
+  age: Number
+  rocket: [Rocket]
+}
+
+Recuerda que en GraphQL el que pide la petición tmb especifica qué es lo que quiere de regreso,no como en REST que el endpoint devuelve siempre el mismo objeto,devolviendo muchas veces de más
+Usualmente en GraphQL solo se tiene un endpoint(pueden ser más,e inclusive se pueden mezclar con servicios REST y tener un backend híbrido).
+
+NOTA: hay dos formas de que Nest y Graphql trabajen juntos:
+
+1- Schema First: cuando usamos esta forma nosotros vamos a definir schema con SDL(Schema Definition Language, o GraphQL Definition Language,es decir GDL).Es muy útil si se tienen conocimientos previos.Basicamente es generar el Schema y atraves de funciones de Nest éstas generarán el código de los modulos,los resolvers(muy interesante pues)
+
+2- Code First: la otra forma es crear las clases y definiciones en TS mediante decoradores y esto nos va a generar el Schema por nosotros.Por ejemplo:
+
+@Query(() => String)
+hello() {
+  return 'Hello world';
+}
+
+@Query(() => [Cat],{name:'cats'})
+async cats() {
+  return this.catsService.findAll();
+}
+Y esto generaria resolvers,schemas,etc.Es decir,que usando codigo de Typescript generaremos codigo GQL,al reves de la primera forma que es al reves.Entiendo que veremos ambas formas
+
+IMPORTANTE: todo endpoint /graphql tiene el tipo Query y Mutation ya definidos.Mediante el primero podemos hacer GETS de data y con el segundo el resto.
+ NOTA: GraphQL permite realizar multiples Queries(y subqueries) de forma simultánea,siendo para el cliente una única peticion/transacción(de nuevo muy interesante esto).
+
+ GraphQL también permite integrar seguridad con Tokens de acceso,no pudiendo realizar una petición sin ese token.
+
+      VIDEO 19 CREAR UN PROYECTO CON NEST Y GRAPHQL
+
+Primero hay que crear un proyecto normal de nest con 'nest new project-name':
+>nest new 02-todo
+
+IMPORTANTE: tengo las librerias en el PDF,pero si cambiaran Fernando deja un enlace a la docu
+Despues hay que instalar las librerias de graphql para nest,adapters,la lib core,etc usando yarn o npm:
+>yarn add @nestjs/graphql @nestjs/apollo graphql @apollo/server
+NOTA:fijate que son muy parecidas a usar un servidor de Express ya que estamos usando uno en el background.
+
+Recuerda tmb desinstalar el prettier y todas las librerias que molestan tanto.
+Bien,ahora faltaria hacer la configuracion en el app.module.ts.Aparte hay que crear un schema,no es suficiente con la configuracion:
+
+import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
+import { Module } from '@nestjs/common';
+import { GraphQLModule } from '@nestjs/graphql';
+
+@Module({
+  imports: [
+    GraphQLModule.forRoot<ApolloDriverConfig>({
+      driver: ApolloDriver
+    })
+  ],
+  controllers: [],
+  providers: [],
+})
+export class AppModule {}
+
+Si ahora levantamos el server dará error por falta del schema.gql(en realidad no daba este error,sino el de la consulta minima necesaria o entrypoint,que basicamente es que necesitamos un re):
+    GraphQLModule.forRoot<ApolloDriverConfig>({
+      driver: ApolloDriver,
+      autoSchemaFile: join(process.cwd(),'src/schema.gql')
+    })
+
+    VIDEO 21 PRIMER RESOLVER
+
+Primero que nada vamos a generar un modulo:
+>nest g mo helloWorld
+Ahora generamos un resolver por cli:
+>nest g r helloWorld --no-spec (g r de generate resolver)
+
+NOTA: fijate que los resolvers van en el array de Providers del modulo.En una API REST serían como un controlador(sin embargo los controllers van en los imports y los services en los providers)
+LOs resolvers proveen las instrucciones para transformar una operacion de GraphQL(una query,mutation o subscription) en data.Fijate que esta queries vendrán del cliente(puedo observar que por su naturaleza son como un controlador,pero técnicamente van en los providers)
+
+NOTA: la mayoria de las definiciones en un schema de GraphQL son object types.Cada uno de estos objetos representa un objeto de dominio(domain types) con los que el cliente pueda necesitar interactuar.Por ejemplo un Author:
+type Author {
+  id: Int!
+  firstName: String
+  lastName: String
+  posts: [Post!]!
+}
+
+Para poder crear esto con la approach 'code first' tenemos que usar una clase de forma muy parecida a crear una Entity.Fijate en el uso del decorador @ObjectType que especifica que es un Object Type para el schema y en el decorador @Field para cada property(investigar como se juntan,parece que usar code first implica no crear un schema.gql):
+import { Field, Int, ObjectType } from '@nestjs/graphql';
+import { Post } from './post';
+
+@ObjectType()
+export class Author {
+  @Field(type => Int)
+  id: number;
+
+  @Field({ nullable: true })
+  firstName?: string;
+
+  @Field({ nullable: true })
+  lastName?: string;
+
+  @Field(type => [Post])
+  posts: Post[];
+}
+
+De nuevo,recuerda que en los resolvers va funcionalidad,son como controladores.Asi pues podemos crear nuestra primera funcion(de momento una query):
+
+import { Resolver, Query } from "@nestjs/graphql";
+
+@Resolver()
+export class HelloWorldResolver {
+  @Query(() => String)
+  helloWorld():string {
+    return 'hello world'
+  }
+}
+Fijate que podria ser async helloWorld(args) perfectamente.Fijate en que Query viene de la libreria @nestjs/graphql ya que hay otro  en @nestjs/common.
+NOTA: lamentablemente hay que especificar al decorador @Query como luce la operacion graphql(@Query( () => String) ).En este caso son tipos de Graphql y no de Typescript 
+
+IMPORTANTE: dado que estamos usando code first el schema.gql se creará sólo,en cuanto tenga algo,esta Query nos autogenerará el file
+TIP:el file es autogenerado y sobreescrito en cada compilación,si escribo algo en él lo perderé en cuanto se regenere.
+
+NOTA: ya puedo ir al playground(que esta en /graphql) y llamar a la Query:
+
+query { <- la palabra query es opcional,pero no mutation o subscription
+  helloWorld
+}
+
+Puedo renombrar la salida con dos puntos o realizar varias llamadas en una unica consulta(esto parece muy interesante):
+
+query {
+  hola:helloWorld
+  hola2:helloWorld
+}
+
+NOTA: en la docu del playground veré que el retorno de la Query es de tipo scalar String.Hay varios escalares en GraphQL:
+Int <- 32-bit int
+Float <- numero con decimales(es un Double)
+String <- secuencia de caracteres UTF-8
+Boolean <- true o false
+ID <- Representa un identificador único
+
+Puedo ver que tienen el ID como scalar ya definido y que un scalar String siempre será UTF-8.
+Adicionalmente podemos crear nuestros propios Scalar
+
+IMPORTANTE: desde el playground puedo descargar el schema.gql y compartirlo con otros devs
+NOTA: normalmente el playground se activa en desarrollo pero obviamente se desactiva en produccion ya que da acceso al server
+
+    VIDEO 22 INSTALAR APOLLO STUDIO EN VEZ DEL PLAYGROUND
+
+NOTA: Fernando deja en el PDF como instalar Apollo Studio pero Nest ya no trabaja con apollo-server-express o apollo-server-core sino que @apollo/server sustituira a estas dos:
+
+import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin/landingPage/default';
+
+Ojo,activar Apollo Studio requiere desactivar el playground.Fijate que lo de arriba va en los plugins y es un método que hay que llamar
+
+@Module({
+  imports: [
+    GraphQLModule.forRoot<ApolloDriverConfig>({
+      driver: ApolloDriver,
+      playground: false, <- DESACTIVAR
+      autoSchemaFile: join(process.cwd(), 'src/schema.gql'),
+      plugins: [ApolloServerPluginLandingPageLocalDefault()],
+    }),
+    HelloWorldModule,
+  ],
+
+El endpoint seguira siendo el mismo (localhost:3000/graphql) pero es una IGU más avanzada
+
+    VIDEO 23 GENERAR UNA NUEVA QUERY
+
+Si no especifico el nombre de la Query en el decorador va a tomar el nombre de la funcion decorada.Seria interesante que no se llamara asi la Query:
+
+ @Query(() => String)
+  helloWorld(): string {
+    return 'Hola mundo';
+  }
+
+Si quisiera cambiar esto simplemente abro el objeto de configuracion que viene como segundo argumento del decorador @Query:
+
+
+@Resolver()
+export class HelloWorldResolver {
+  @Query(() => String, { description: 'retorna un literal', name: 'hello' })
+  helloWorld(): string {
+    return 'Hola mundo';
+  }
+}
+
+Desde ahora la Query se llama 'hello',además de tener una pequeña description(Fijate que es aqui donde especifico que puede regresar un null).Si cambio este valor veré como cambia el retorno de scalar String! al scalar String.
+
+import { Float } from "@nestjs/graphql";
+
+  @Query(() => Float, {
+    description: 'retorna un scalar Float entre 0 y 100',
+    name: 'randomNumber',
+    nullable: false,
+  })
+  getRandomNumber(): number {
+    return +(Math.random() * 100).toFixed(2);
+  }
+
+Fijate que me tengo que importar el tipo de scalar.Recuerda que puedo realizar varias llamadas a la vez en GraphQL en una unica llamada:
+
+query LaQueryDeAsinto {
+  rnd1:randomNumber
+  rnd2:randomNumber
+  rnd3:randomNumber
+}
+La response será asi:
+{
+  "data": {
+    "rnd1": 22.21,
+    "rnd2": 23.25,
+    "rnd3": 90.96
+  }
+}
+Fijate que puedo sacar multicursores o duplicar lineas en apollo studio.

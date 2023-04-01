@@ -25,7 +25,14 @@ export class TodoService {
   ];
 
   create(createTodoDto: CreateTodoDto) {
-    return 'This action adds a new todo';
+    // console.log(this.todos.map((todo) => todo.id));
+    // console.log(...this.todos.map((todo) => todo.id));
+    return this.todos.push({
+      // Math.max no pide un array,sino un numero por cada argumento(los que quiera)
+      id: Math.max(...this.todos.map((todo) => todo.id), 0) + 1,
+      description: createTodoDto.description,
+      done: false,
+    });
   }
 
   findAll(): Todo[] {
@@ -39,10 +46,19 @@ export class TodoService {
   }
 
   update(id: number, updateTodoDto: UpdateTodoDto) {
-    return `This action updates a #${id} todo`;
+    const todoToUpdateIndex = this.todos.findIndex((todo) => todo.id === id);
+    if (todoToUpdateIndex === -1)
+      throw new NotFoundException(`TODO con id ${id} no encontrado`);
+    // si llega aqui si encontro y puedo acceder
+    this.todos[todoToUpdateIndex] = {
+      ...this.todos[todoToUpdateIndex],
+      ...updateTodoDto,
+    };
+    return this.todos[todoToUpdateIndex];
   }
 
   remove(id: number) {
-    return `This action removes a #${id} todo`;
+    const todos = this.todos.filter((todo) => todo.id !== id);
+    return todos;
   }
 }
