@@ -370,3 +370,132 @@ La response será asi:
   }
 }
 Fijate que puedo sacar multicursores o duplicar lineas en apollo studio.
+
+VIDEO 24 GENERAR UN RANDOM ENTRE CERO Y UN ARGUMENTO - PASAR ARGUMENTOS POR LA QUERY
+
+En GraphQL ,cada campo y objeto anidado puede tener su propio set de argumentos,haciendo a graphQL superpoderoso.Incluso puedo pasar argumentos a campos escalares,para implementar transformaciones de datos en el server,en vez de en el cliente(de nuevo otro concepto interesante).Es decir,que puedo tipar los argumentos y esperar solo un determinado tipo
+
+Bien,para poder pasar argumentos en la forma code first tengo que usar el decorador @Args(name:string) donde le daré el nombre del arg que quiero ver en el endpoint:
+
+@Query(() => Int,{name:'randomNumberFromZeroTo})
+getRandomNumberFromZeroTo(@Args('to',{type: () => Int}) to:number):number {
+  return Math.floor(Math.random() * to)
+}
+Importante no confundir el to de @Args('to') que tendrá impacto en toda la app con el siguiente to que es una variable de scope local.También hay que indicar el tipo de argumento que será en GraphQL,de nuevo no confundir con el number de javascript
+
+Por último podemos especificar un valor por defecto pero de nuevo tenemos que hacerlo tanto para JavaScript como para GraphQL(con un nullable vale pero tmb tenia un defaultValue que pisará al de JavaScript.Como no queremos eso con el nullable vale):
+
+  getRandomNumberFromZeroTo(
+    @Args('to', { type: () => Int, nullable: true }) to: number = 6,
+  ): number {
+    return Math.floor(Math.random() * to);
+  }
+
+NOTA: durante todo el curso vamos a usar el approach code first por ser un curso de iniciación,pero es más eficiente usar el approach de schema first y el schema.gql no autogenerado
+
+      SECCION 04 CONTINUACION DEL TODO
+
+En esta sección tendremos mucha información de cómo trabajar con GraphQL y Nest, puntualmente veremos:
+
+1- Alias
+2- Fragments
+3- Queries
+4- Mutations
+5- Aggregations
+6- Deprecated directive
+7- Args
+8- Inputs
+9- Custom Types
+10- Servicios
+11- CRUD
+
+Y nos dará una excelente idea de cómo realizar cosas más complejas el día de mañana.
+
+      VIDEO 31 TODO RESOLVER Y CUSTOM OBJECT TYPES
+
+Lo primero es generar un modulo.Fijate que la estructura queda bastante clara,colgando todos los modulos de src(nest g mo todos).
+
+Despues creo un resolver en esta carpeta(fijate que el comando es nest g r todos porque le he llamado todos al modulo)
+
+Para crear un scalar personalizado(nuestro Object type para un Todo) simplemente creamos una clase decorandola con @ObjectType:
+
+import { Field, Int, ObjectType } from "@nestjs/graphql";
+
+@ObjectType()
+export class Todo {
+  
+  @Field(() => Int)
+  id: number;
+  
+  @Field(() => String)
+  description:string;
+  
+  @Field(() => Boolean)
+  done:boolean=false;
+}
+
+NOTA: fijate que @Field luce igual que @Query,necesita una funcion que devuelva un tipo válido de GraphQL.
+Fijate que String y Boolean son los constructores de Javascript,pero valen en este caso.Ahora ya si podemos crear en el resolver de este módulo nuestra primera @Query para que devuelva todos los Todos:
+
+import { Query, Resolver } from '@nestjs/graphql';
+import { Todo } from './entity/todo.entity';
+
+@Resolver()
+export class TodosResolver {
+  @Query(() => [Todo], {
+    name: 'todos',
+    description: 'encuentra todos los Todos',
+  })
+  findAllTodos(): Todo[] {
+    return [
+      {
+        id: 1,
+        description: 'anything',
+        done: false,
+      },
+    ];
+  }
+
+          VIDEO 32 SERVICES
+
+Antes de nada fijate que en el Apollo Studio se organizan las Queries y Mutations alfabeticamente asi que la query anterior 'todos' estará bastante abajo.
+
+IMPORTANTE: idealmente querremos que nuestro resolver se mantenga lo más simple posible.Es por ello que necesitariamos un servicio que acceda a la DB.El resolver no debería tener lógica de negocio.
+>nest g s todos --no-spec (todos por el modulo,recuerda)
+
+Bien,de momento creamos una simple coleccion y empezamos el CRUD:
+@Injectable()
+export class TodosService {
+  private todos: Todo[] = [
+    { id: 1, description: 'Piedra del alma', done: false },
+    { id: 2, description: 'Piedra del espacio', done: true },
+    { id: 3, description: 'Piedra del poder', done: false },
+  ];
+
+  findAll(): Todo[] {
+    return this.todos;
+  }
+}
+
+Inyectamos la instancia de esta clase en el resolver y accedemos a la capa de persistencia mockeada:
+
+  constructor(private readonly todosService: TodosService) {}
+
+  @Query(() => [Todo], {
+    name: 'todos',
+    description: 'encuentra todos los Todos',
+  })
+  findAllTodos(): Todo[] {
+    return this.todosService.findAll();
+  }
+
+IMPORTANTE: si quiero tener acceso a datos como 'contar todos los Todos en done,o todos los que tengan description' tengo que crear Queries que devuelvan esto,GraphQL es solo un lenguaje de consultas a API pero mediante solo lo que esté definido previamente
+Por último puedo poner un alias a la response tmb:
+query {
+  tareas: todos {
+    description
+    done  
+  }
+}
+
+      VIDEO 33 REGRESAR UN TODO POR ID

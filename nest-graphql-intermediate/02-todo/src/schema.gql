@@ -2,10 +2,24 @@
 # THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
 # ------------------------------------------------------
 
+type Todo {
+  id: Int!
+  description: String!
+  done: Boolean!
+}
+
 type Query {
   """retorna un literal"""
   hello: String!
 
   """retorna un scalar Float entre 0 y 100"""
   randomNumber: Float!
+
+  """
+  retorna un entero entre 0 y el argumento recibido no incluyente,por defecto un 6
+  """
+  randomNumberFromZeroTo(to: Int = 2): Int!
+
+  """encuentra todos los Todos"""
+  todos: [Todo!]!
 }
