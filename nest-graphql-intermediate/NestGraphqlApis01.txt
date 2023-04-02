@@ -499,3 +499,208 @@ query {
 }
 
       VIDEO 33 REGRESAR UN TODO POR ID
+
+Obviamente siempre vamos a querer acceder a un registro/item de una coleccion.La lógica del servicio es bastante sencilla:
+
+  findOne(id: number): Todo | void {
+    const todo = this.todos.find((todo) => todo.id === id);
+    if (!todo)
+      throw new NotFoundException(`Todo con el id ${id} no encontrado`);
+    return todo;
+  }
+
+Y de nuevo la query es algo que ya sabemos como hacer:
+
+  @Query(() => Todo, {
+    name: 'findOneTodoByID',
+    description: 'encuentra un Todo segun su ID',
+  })
+  findOneTodo(@Args('id', { type: () => Int }) id: number) {
+    return this.todosService.findOne(id);
+  }
+
+NOTA: si buscamos por un id que no existe vemos que el error de graphql es bastante ilegible.Fernando mostrará como aplanar esa respuesta con interceptores y manipular el error 
+
+También podemos pedir en una misma petición varias entidades.Desde luego esto tiene buena pinta,sin embargo se puede apreciar perfectamente que estamos repitiendo las peticiones que queremos recibir.Esto lo solucionaremos con un fragment:
+{
+  todo1:findOneTodoByID(id: 1) {
+    description
+    done
+    id
+  }
+  todo2:findOneTodoByID(id: 2) {
+    description
+    done
+    id
+  }
+}
+
+      VIDEO 34 FRAGMENTS -EVITANDO CODIGO DUPLICADO
+
+Los Fragments son unidades reutilizables para construir grupos de campos e incluirlos en las queries y asi evitar reescribir el mismo código.Me permiten escribir grupos de campos(set of fields)
+
+La sintaxis es:
+fragment NombreDelFragmento on Todo {
+  elegir campos
+}
+Ojo,en vez del ObjectType Todo puedo elegir Query o Mutation y ser menos restrictivo,en este ejemplo sabemos que Todo nos vale,pero podemos elevar a Query el scope del fragment.
+Asi pues pedimos un par de Todos usando un fragment como práctica:
+
+query MyQuery {
+  todo1:findOneTodoByID(id: 1) {
+   ...customFields 
+  }
+  todo2:findOneTodoByID(id: 2) {
+    ...customFields
+  }
+}
+
+fragment customFields on Todo {
+  id
+  description
+  done
+}
+
+Fijate que va afuera de la Query y que hay que usar el operador spread para espacir el objeto
+Los fragments de GraphQL ayudan muchisimo a aplicar el principio DRY y no repetir código.
+Por último puedo guardar cualquier Query en Apollo Studio y despues consultarla desde la segunda pestaña Operation collections(parecido a lo que hacemos en  Postman)
+
+      VIDEO 35 MUTATIONS E INPUTS DE VALORES
+
+En este video vamos a ver el nuevo tipo de dato Input y las Mutations.
+Las mutations son queries usadas para modificar la data almacenada y retornar valores(basicamente es la forma de realizar POST,PUT o DELETEs) 
+En cuanto al datatype Input,es la información que llamariamos body en una peticion REST,peo aplicado a una Mutation(ojo,es lo que mandaría el Front).Es decir que una Mutation tiene un Input(y dado que en GraphQL solo se expone un único endpoint supongo que siempre tendrán un Input cada Mutation al menos con el ID en el DELETE).
+
+Pero veamos esto en código.Lo primero es crear la carpeta 'dtos' y la subcarpeta 'inputs' para la entidad/modulo actual.Despues hay que decorar una clase con el decorador @InputType y cada propiedad con @Field:
+
+import { Field, InputType } from "@nestjs/graphql";
+
+@InputType()
+export class CreateTodoInput {
+  @Field(() => String)
+  description: string;
+}
+
+Ojo,esto creará un nuevo tipo de dato en GraphQL de forma similar a como hemos creado con @ObjectType el Object Type Todo(ahora será CreateTodoInput)
+IMPORTANTE: si viene una propiedad que GraphQL no espera desde el cliente la va a ignorar(de forma similar a mandar de más en el body,el server va a ignorar lo extra)
+
+Aún falta en el modulo.resolver crear la Mutation.Obviamente es con el decorador Mutation:
+  
+  // una mutation tmb tiene un tipo de retorno
+  @Mutation(() => Todo, {
+    description: 'crea un Todo',
+    name: 'createTodo',
+  })
+  createTodo(@Args('CreateTodoInput') createTodoInput: CreateTodoInput) {
+    return this.todosService.createTodo(createTodoInput);
+  }
+
+  Fijate que el nombre de @Args es como se llamará el argumento,hubiera sido mejor poner description,por ejemplo.
+
+  En cuando al servicio creo algo asi:
+
+  createTodo(createTodoInput: CreateTodoInput): Todo {
+    const todo = new Todo();
+    todo.description = createTodoInput.description;
+    // fijate que interesante el Math.max(...this.colection.map(c => c.id),0)+1
+    todo.id = Math.max(...this.todos.map((todo) => todo.id), 0) + 1;
+    this.todos.push(todo);
+    return todo;
+  }
+
+  IMPORTANTE: en este punto debemos validar los campos,ya que por ejemplo podrian mandar un string vacio.Para ello ya tenemos las librerias class-validator y class-transformer(esta ultima va a ser crucial además)
+  Ojo,que tengo que instalarlas en este proyecto(yarn add class-validator class-transformer)
+
+import { IsNotEmpty, IsString, Length } from 'class-validator';
+import { Field, InputType } from '@nestjs/graphql';
+import { Transform } from 'class-transformer';
+
+@InputType()
+export class CreateTodoInput {
+  @Field(() => String, { description: 'descripcion de la tarea a realizar' })
+  @IsString()
+  @IsNotEmpty()
+  @Length(1, 50)
+  @Transform(({ value }) => value.trim())  <- de lujo
+  description: string;
+}
+
+Recuerda que la isntalacion de esas dos librerias tmb pide esta configuracion en el main.ts:
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    }),
+  );
+Este tipo de validaciones es vital para el Front
+
+        VIDEO 37 ACTUALIZAR UN TODO
+
+IMPORTANTE: dado que ahora los campos van a ser opcionales es imprescindible poner el nullabe a true,además de las validaciones y el operador ? para la interface de TypeScript,sino peta GraphQL:
+
+  
+  @Field(() => Boolean, { description: 'tarea terminada Si/no',nullable:true })
+  @IsOptional()
+  @IsBoolean()
+  done?: boolean;
+
+Al final en @InputType para el Update queda asi(fijate que queda todo perfectamente definido con sus validaciones y opcionalidades):
+
+@InputType()
+export class UpdateTodoInput {
+  @Field(() => Int, {
+    description: 'id del todo a actualizar',
+    nullable: false,
+  })
+  @IsInt()
+  @Min(1)
+  id: number;
+
+  @Field(() => String, {
+    description: 'actualizar description',
+    nullable: true,
+  })
+  @IsString()
+  @IsOptional()
+  @Length(1, 50)
+  @Transform(({ value }) => value.trim())
+  description?: string;
+
+  @Field(() => Boolean, {
+    description: 'tarea terminada Si/no',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  done?: boolean;
+}
+
+La @Mutation quedaría asi:
+  @Mutation(() => Todo,{
+    description: 'actualiza un Todo',
+    name:'updateTodo'
+  })
+  updateTodo(@Args('updateTodoInput') updateTodoInput: UpdateTodoInput) {
+    return this.todosService.updateTodo(updateTodoInput)
+  }
+y el servicio simplemente actualizaría contra la capa de persistencia.
+Recuerda que el tipo Input va como un JSON.Y fijate como saltan la validaciones del class-validator tmb,aparte de las de GraphQL y Typescript.Genial
+
+      VIDEO 38 ELIMINAR UN TODO
+
+La eliminacion es otra mutación(ya que cambiamos la data).Lo unico que no lo es es consultar data.En este punto es super sencillo implementar el borrado(fijate que no necesitamos ningun dto para el id,con que sea un Int nos vale):
+
+ @Mutation(() => Boolean)
+  removeTodo(@Args('id',{type: () => Int}) id:number) {
+    return this.todosService.removeTodo(id);
+  }
+
+  Y el service:
+    removeTodo(id: number) {
+    this.findOne(id);
+    // si pasó aqui es que tengo un todo
+    this.todos = this.todos.filter((todo) => todo.id !== id);
+    return true;
+  }
+Bien,una vez echas las operaciones básicas de un CRUD se puede ver perfectamente que faltan operaciones basicas como groupBy o sort,puesto que quizás el front quiera ver solo los todos completados, o verlos segun orden de creado,etc.De nuevo GraphQL cubre todas estas operaciones,de forma sencilla
+

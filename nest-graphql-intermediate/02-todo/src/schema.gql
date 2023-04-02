@@ -21,5 +21,33 @@ type Query {
   randomNumberFromZeroTo(to: Int = 2): Int!
 
   """encuentra todos los Todos"""
-  todos: [Todo!]!
+  findAllTodos: [Todo!]!
+
+  """encuentra un Todo segun su ID"""
+  findOneTodoByID(id: Int!): Todo!
+}
+
+type Mutation {
+  """crea un Todo"""
+  createTodo(CreateTodoInput: CreateTodoInput!): Todo!
+
+  """actualiza un Todo"""
+  updateTodo(updateTodoInput: UpdateTodoInput!): Todo!
+  removeTodo(id: Int!): Boolean!
+}
+
+input CreateTodoInput {
+  """descripcion de la tarea a realizar"""
+  description: String!
+}
+
+input UpdateTodoInput {
+  """id del todo a actualizar"""
+  id: Int!
+
+  """actualizar description"""
+  description: String
+
+  """tarea terminada Si/no"""
+  done: Boolean
 }
