@@ -1,0 +1,30 @@
+version: "3"
+
+services:
+  postgres:
+    image: postgres:14
+    container_name: anylistDB
+    restart: always
+    ports: 
+      - "5433:5432"
+    environment:
+      - POSTGRES_USER=root 
+      - POSTGRES_PASSWORD=ABCabc123
+      - POSTGRES_DB=AnyList
+    volumes:
+      - pgvolume:/var/lib/postgresql/data
+
+  pgadmin:
+    image: dpage/pgadmin4:6
+    container_name: pgadmin4
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: "admin@admin.com"
+      PGADMIN_DEFAULT_PASSWORD: "admin"
+    ports:
+      - "81:80"
+    depends_on:
+      - postgres
+
+volumes:
+  pgvolume:

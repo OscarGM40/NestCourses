@@ -8,6 +8,14 @@ type Todo {
   done: Boolean!
 }
 
+"""Todo common aggregations"""
+type AggregationsType {
+  total: Int!
+  pending: Int!
+  completed: Int!
+  totalTodosOld: Int! @deprecated(reason: "This get is obsolete.Please use total fiel instead")
+}
+
 type Query {
   """retorna un literal"""
   hello: String!
@@ -21,10 +29,23 @@ type Query {
   randomNumberFromZeroTo(to: Int = 2): Int!
 
   """encuentra todos los Todos"""
-  findAllTodos: [Todo!]!
+  findAllTodos(
+    """estado del todo"""
+    status: Boolean
+  ): [Todo!]!
 
   """encuentra un Todo segun su ID"""
   findOneTodoByID(id: Int!): Todo!
+
+  """cuenta todos los todos en cualquier estado"""
+  totalTodos: Int!
+
+  """cuenta todos los todos ya completados"""
+  completedTodos: Int!
+
+  """cuenta todos los todos pendientes"""
+  pendingTodos: Int!
+  aggregations: AggregationsType!
 }
 
 type Mutation {

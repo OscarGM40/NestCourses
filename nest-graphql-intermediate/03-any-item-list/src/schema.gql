@@ -1,0 +1,96 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+type Item {
+  id: String!
+  name: String!
+  quantity: Float!
+  measureUnit: String
+}
+
+type User {
+  id: ID!
+  fullName: String!
+  email: String!
+  roles: [String!]!
+  isActive: Boolean!
+  lastUpdateBy: User
+}
+
+type AuthResponse {
+  token: String!
+  user: User!
+}
+
+type Query {
+  revalidateJWT: AuthResponse!
+  getAllUsers(roles: [ValidRoles!] = []): [User!]!
+  getOneUserById(id: ID!): User!
+  getAllItems: [Item!]!
+  getOneItemByID(id: ID!): Item!
+}
+
+enum ValidRoles {
+  admin
+  user
+  superUser
+}
+
+type Mutation {
+  register(signupInput: SignupInput!): AuthResponse!
+  login(loginInput: LoginInput!): AuthResponse!
+  blockUser(id: ID!): User!
+  updateUser(updateUserInput: UpdateUserInput!): User!
+  createItem(createItemInput: CreateItemInput!): Item!
+  updateItem(updateItemInput: UpdateItemInput!): Item!
+  removeItem(id: ID!): Item!
+}
+
+input SignupInput {
+  """Email del usuario"""
+  email: String!
+
+  """FullName del usuario"""
+  fullName: String!
+
+  """Password del usuario"""
+  password: String!
+}
+
+input LoginInput {
+  """Email del usuario"""
+  email: String!
+
+  """Password del usuario"""
+  password: String!
+}
+
+input UpdateUserInput {
+  """Email del usuario"""
+  email: String
+
+  """FullName del usuario"""
+  fullName: String
+
+  """Password del usuario"""
+  password: String
+  id: ID!
+  roles: [ValidRoles!]
+  isActive: Boolean
+}
+
+input CreateItemInput {
+  """name of the item"""
+  name: String!
+  quantity: Float!
+  measureUnit: String
+}
+
+input UpdateItemInput {
+  """name of the item"""
+  name: String
+  quantity: Float
+  measureUnit: String
+  id: ID!
+}

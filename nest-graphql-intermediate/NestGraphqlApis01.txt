@@ -704,3 +704,115 @@ La eliminacion es otra mutación(ya que cambiamos la data).Lo unico que no lo es
   }
 Bien,una vez echas las operaciones básicas de un CRUD se puede ver perfectamente que faltan operaciones basicas como groupBy o sort,puesto que quizás el front quiera ver solo los todos completados, o verlos segun orden de creado,etc.De nuevo GraphQL cubre todas estas operaciones,de forma sencilla
 
+      VIDEO 39 AGREGAR FILTROS A UNA QUERY EN GRAPHQL
+
+Para realizar esto vamos a crear el subfolder modulo/dto/args de igual forma que ya hemos creado el modulo/dot/inputs.
+Recuerda que la diferencia entre ambos es que los inputs vienen en el body de la peticion y los args son argumentos a mandar
+
+Bien,y de igual forma que hemos creado por ejemplo un update-todo.input.ts creamos un status.args.ts para el argumento status(que tmb va a ser una clase)
+
+Sabiendo todo esto creamos nuestro ArgsType.Fijate que necesitamos el nullable a true para GraphQL,el IsOptional para la validacion y el operador ? para Typescript:
+
+@ArgsType()
+export class StatusArgs {
+  @Field(() => Boolean, { description: 'estado del todo', nullable: true })
+  @IsOptional()
+  status?: boolean;
+}
+
+IMPORTANTE: al usar @ArgsType no hay que poner nada en el decorador @Args de la query o mutation o dará un error,es decir,hay que usar @Args en su forma más simple:
+
+  @Query(() => [Todo], {
+    name: 'findAllTodos',
+    description: 'encuentra todos los Todos',
+  })
+  findAllTodos(@Args() status: StatusArgs): Todo[] {
+    return this.todosService.findAll(status);
+  }
+
+  Y ya solo hay que pasar un status como arg:
+  fragment fields on Todo {
+    description 
+    done
+    id
+  }
+
+  {
+    completed: findAllTodos(status: true){
+      ...fields
+    }
+  }
+
+  En resumen,para que front pueda pedir sorts o agrupaciones se usan argumentos opcionales en el back
+
+        VIDEO 41 AGREGAR CAMPOS CON COUNTS - AGGREGATIONS
+
+Ya hemos visto que para hacer sorts el back las tiene que exponer.Otra feature muy usada es contar ocurrencias de una determinada circunstancia(todos los todos en done o en pending,etc).Esta feature es indispensable a la hora de hacer una paginacion(que veremos en otra sección).
+
+  @Query(() => Int, {
+    description: 'cuenta todos los todos en cualquier estado',
+    name: 'totalTodos',
+  })
+  totalTodos(): number {
+    return this.todosService.totalTodos;
+  }
+
+  @Query(() => Int, {
+    description: 'cuenta todos los todos ya completados',
+    name: 'completedTodos',
+  })
+  completedTodos():number{
+    return this.todosService.completedTodos;
+  }
+
+Fijate que estamos en lo mismo,el back tiene que desarrollar toda la lógica.Esta vez con simples getters nos vale dado su sencillez:
+
+En el service.ts:
+
+  get totalTodos() {
+    return this.todos.length;
+  }
+
+  get completedTodos() {
+    return this.todos.filter((todo) => todo.done).length;
+  }
+
+  Desde luego es muy util todo esto pero se lo tiene que picar back
+
+      VIDEO 42 OBJECT TYPES - AGGREGATIONS
+
+Recordemos que el decorador @ObjectType nos sirve para definir un nuevo Object Type del que GraphQL sabrá que tipo de campos tiene,etc( fijate que mientras no ponga una clase con este decorador GraphQL no sabrá identificar esa entidad)
+Podriamos crearnos un Object Type con todas las agregaciones anteriores
+
+NOTA: no queda muy claro si lo anterior se llaman agregaciones,mejor no darlo por sentado aún
+
+Con todo esto creamos un nuevo objeto que embeba todos los counts.Fijate en el uso tan interesante que podemos hacer deprecando cualquier opcion faćilmente:
+
+@ObjectType({ description: 'Todo common aggregations' })
+export class AggregationsType {
+
+  @Field(() => Int)
+  total: number;
+  
+  @Field(() => Int)
+  pending: number;
+  
+  @Field(() => Int)
+  completed: number;
+  
+  @Field(() => Int, {deprecationReason:'This get is obsolete.Please use total fiel instead' })
+  totalTodosOld: number;
+}
+
+El resolver simplemente llamará a los getters que ya tenemos,etc:
+
+ // AGGREGATIONS CON UN CUSTOM TYPE
+  @Query(() => AggregationsType)
+  aggregations():AggregationsType{
+    return {
+      total:this.todosService.totalTodos,
+      completed: this.todosService.completedTodos,
+      pending: this.todosService.pendingTodos,
+      totalTodosOld:this.todosService.totalTodos,
+    }
+  }

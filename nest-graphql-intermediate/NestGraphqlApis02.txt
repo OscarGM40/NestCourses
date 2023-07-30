@@ -1,0 +1,1065 @@
+			  SECCION 05 Lista de Productos App
+
+Esta sección está puramente enfocada en la creación y mantenimiento de ítems para nuestro backend, pero trabajaremos con una base de datos que nos permita comunicar Postgres con Nest+ GraphQL y que el desarrollador que consuma nuestro backend, pueda recuperar la información respectiva.
+
+Puntualmente veremos:
+
+1 -Postgres
+2- TypeORM
+3- Entidades con GraphQL Object Types
+4- CRUD (Queries y Mutations)
+
+		VIDEO 46- 47 INICIO DEL PROYECTO + INSTALACION GRAPHQL
+
+Creamos un nuevo proyecto con 'nest new project-name'.Elimino el .git para quitar el repositorio que inicia por defecto y todo lo relacionado con prettier por ser un cursillo.También los controladores y servicios del modulo app
+TIP: fijate que Nest viene con RxJs instalado por defecto!
+
+Despues seguimos con las instalaciones de GraphQL(y validaciones,etc) y la generación de un Schema para que pueda arrancar la app:
+>yarn add @apollo/server @nestjs/apollo  @nestjs/graphql graphql class-validator class-transformer
+
+En el app.module recuerda que hay que configurar esto
+
+@Module({
+  imports: [
+    GraphQLModule.forRoot<ApolloDriverConfig>({
+      driver: ApolloDriver,
+      playground: false,
+      // process.cwd es la carpeta donde se está ejecutando el proyecto(no la carpeta más cercana)
+      autoSchemaFile: join(process.cwd(), 'src/schema.gql'),
+      plugins: [ApolloServerPluginLandingPageLocalDefault()],
+    }),
+  ],
+  controllers: [],
+  providers: [],
+})
+export class AppModule {}
+
+TIP: siempre que no sepa muy bien donde va algo como por ejemplo GraphQLModule si tiene la palabra Module va en los imports(en Angular igual).
+
+Fijate que aun falta tener al menos una Query o Mutation para que se genere un schema.Esta vez lo vamos a hacer por cli:
+
+>nest g res items --no-spec (generate resource)
+Recuerda que al generar un recurso Nest me preguntará si es una API REST o un GraphQL(code first) o GraphQL(schema first) o incluso un Microservice o un WebSocket.Amazing
+Obviamente elegimos GraphQL code first.
+
+Fijate que va a generar un modulo,un resolver,el service,los inputs para el create y update y la entity para el Objec Type.Aparte metió en providers del modulo el resolver y el service y en el modulo principal el import del submodulo
+
+What transport layer do you use? GraphQL (code first)
+Would you like to generate CRUD entry points? Yes
+CREATE src/items/items.module.ts (224 bytes)
+CREATE src/items/items.resolver.ts (1109 bytes)
+CREATE src/items/items.service.ts (625 bytes)
+CREATE src/items/dto/create-item.input.ts (196 bytes)
+CREATE src/items/dto/update-item.input.ts (243 bytes)
+CREATE src/items/entities/item.entity.ts (187 bytes)
+UPDATE src/app.module.ts (812 bytes)
+
+De todas formas,aunque sea algo muy precario al tener varias queries y mutations ya se genera un schema.gql y puede compilar la aplicación.
+
+		VIDEO 48 LEVANTAR DB CON POSTGRES Y DOCKER
+
+En este punto necesitamos una base de datos.Usaremos un contenedor de PostGreSQL.
+IMPORTANTE: por defecto el docker-compose puede leer el archivo .env que deberia estar a su altura(no parece que haya sido asi,ojo,muchos problemas con esto,diria que hay que configurar Nest).Y recuerda que el hostname en PgAdmin es el nombre del servicio en el yaml
+
+      VIDEO 49 CONSIDERACIONES ADICIONALES
+
+Fernando recalca que en este punto hay que excluir cualquier archivo .env y el volumen de docker que está embebiendo en el proyecto por estar en Windows o Mac
+También deja instrucciones del proyecto en el README.md
+
+      VIDEO 50 CONECTAR NEST CON LA DB
+
+Docu: https://docs.nestjs.com/techniques/database
+est no lee por defecto las env,es un modulo externo que tenemos que instalar y configurar(el modulo config):
+>yarn add @nestjs/config      
+
+En el app.module.ts:
+imports: [ConfigModule.forRoot()]
+
+NOTA: recuerda que para crear contenido público en una app de Nest tmb viene restringido y es otro modulo a instalar(el serve-static):
+>yarn add @nestjs/serve-static
+ServeStaticModule.forRoot({
+  rootPath: join(__dirname,'..','public) <- ruta al folder
+})
+
+Bien,una vez abierta la app para crear variable de entorno instalamos el ORM.Usaremos TypeORM(que son varias librerias):
+
+>yarn add @nestjs/typeorm typeorm mysql2 <- ojo que vamos a usar otro driver,este seria para mysql,pero estamos usando Postgres y el driver es 'pg'luego:
+>yarn add @nestjs/typeorm typeorm pg
+
+Ahora si,en el app.module tenemos que configurar este modulo/libreria:
+
+En el app.module
+    TypeOrmModule.forRoot({
+      ssl: process.env.STAGE === 'prod',
+      extra: {
+        ssl:
+          process.env.STAGE === 'prod' ? { rejectUnauthorized: false } : null,
+      },
+      type: 'postgres',
+      host: process.env.DB_HOST,
+      port: +process.env.DB_PORT,
+      database: process.env.DB_NAME,
+      username: process.env.DB_USERNAME,
+      password: process.env.DB_PASSWORD,
+      entities: [],
+      synchronize: true,
+      autoLoadEntities: true,
+    }),
+
+  Tomar este deploy como ejemplo,parece que va bien.
+
+      VIDEO 51 CREAR ENTITY ITEM
+
+Vamos a crear la primera entidad.En realidad nos vale ya el file que usamos para definir el Object Type pues la clase perfectamente puede ser anotada con @Entity y @ObjectType:
+
+NOTA: ojo con el error GraphQLError: Type Item must define one or more fields.Esto implica poner el autoLoadEntities a true y definir al menos un Field:
+
+// perfectamente pueden convivir un ObjectType con una Entity,ojo
+@Entity({ name: 'items' })
+@ObjectType()
+export class Item {
+
+  // por defecto una primary key el ORM la pondrá como autoincrementada
+  @PrimaryGeneratedColumn('uuid')
+  @Field(() => String)
+  id: string;
+
+  @Column()
+  @Field(() => String)
+  name: string;
+
+  @Column()
+  @Field(() => Float)
+  quantity: number;
+
+  // unidad de medida
+  @Column({ comment: 'measure unit of the item/product' })
+  @Field(() => String)
+  measureUnit: string;
+}
+
+IMPORTANTE: siempre que defina una entidad la tengo que importar en el modulo donde la defina:
+
+@Module({
+  imports:[
+    TypeOrmModule.forFeature([Item])
+  ],
+  providers: [ItemsResolver, ItemsService],
+})
+export class ItemsModule {}
+
+LINK A COMO CREAR MIGRACIONES: https://typeorm.io/migrations
+
+    VIDEO 52-53 CREAR UN ITEM EN DB - SERVICIO Y DTO
+
+Normalmente la creación va primero,antes del GET,PUT o DELETE(realmente iria la autenticacion pero eso en la siguiente sección)
+
+Lo primero es el DTO para crear un Item.De nuevo fijate que el decorador @InputType no interfiere en nada:
+
+@InputType()
+export class CreateItemInput {
+
+  @Field(() => String, { nullable: false, description: 'name of the item' })
+  @IsString()
+  @IsNotEmpty()
+  @Length(1,50)
+  name: string;
+  
+  @Field(() => Float)
+  @IsPositive()
+  quantity: number;
+  
+  @Field(() => String, { nullable: true })
+  @IsOptional()
+  @IsString()
+  measureUnit?: string;
+}
+
+Una vez con el DTO en el servicio hay que inyectar el repositorio.Fijate que el return del await.repository.save me vale(un return newItem tmb valia):
+
+  constructor(
+    @InjectRepository(Item)
+     private readonly itemsRepository: Repository<Item>,
+  ){}
+  
+  async create(createItemInput: CreateItemInput):Promise<Item> {
+    const newItem = this.itemsRepository.create(createItemInput)
+    return await this.itemsRepository.save(newItem);
+  }
+
+  Por ultimo fijate que dió error la no nulidad del campo measureUnit de la entidad,ya que solo la teniamos bien en el createDto:
+
+  @Column({ comment: 'measure unit of the item/product',nullable:true })
+  @Field(() => String,{nullable:true})
+  @IsOptional()
+  measureUnit?: string;
+
+      VIDEO 54 OBTENER TODOS LOS ITEMS
+
+De momento simplemente devolvemos todos.Recuerda inferir y/o definir el tipo de retorno:
+
+  async findAll(): Promise<Item[]> {
+    return await this.itemsRepository.find();
+  }
+
+Lo mismo para el findOne.Fijate que hay varias sintaxis posibles para el findOne(con where,sin where,etc...):
+  
+  async findOne(id: string): Promise<Item>  {
+    const item = await this.itemsRepository.findOne(id);
+    if(!item) throw new NotFoundException(`Item with id ${id} not found`)
+    return item;
+  }
+
+IMPORTANTE: en el resolver tengo que especificar el Pipe ParseUUIDPipe para que no llegue hasta el controlador la lógica si el parametro no tiene forma de UUID.Fijate tmb en que el Parse va al final(pero esto me pareció que no siempre ha sido así??):
+
+  @Query(() => Item, { name: 'getOneItemById' })
+  findOne(
+    @Args('id', { type: () => ID }, ParseUUIDPipe) id: string,
+  ): Promise<Item> {
+    return this.itemsService.findOne(id);
+  }
+
+          VIDEO 56 UPDATE AN ITEM
+
+La actualización no es muy diferente a la creación,con la salvedad que necesitamos el id.Muy importante ver como PartialType va a poner ya él solo todas las properties a opcionales:
+
+@InputType()
+// ojo que partial type deja todas las propiedades como opcionales a pesar de declararlas obligatorias.En resumen ya tengo todo
+export class UpdateItemInput extends PartialType(CreateItemInput) {
+  @Field(() => ID)
+  @IsUUID()
+  id: string;
+
+Eso si,aun faltaba poner @IsUUID del class-validator(error id should not exists).En cuanto al guardado recuerda que en SQL si ve que tiene id el save me va a hacer de update directamente,luego: 
+
+
+  async update(id: string, updateItemInput: UpdateItemInput): Promise<Item> {
+    const item = await this.findOne(id);
+    if (updateItemInput.name) item.name = updateItemInput.name;
+    if (updateItemInput.quantity) item.quantity = updateItemInput.quantity;
+    if (updateItemInput.measureUnit)
+      item.measureUnit = updateItemInput.measureUnit;
+    return await this.itemsRepository.save(item);
+
+Sin embargo es aun mejor usar el método preload que va a hacerme toda la lógica de sustitución de propiedades:
+async update(id:string,updateItemInput:UpdateItemInput):Promise<Item>{
+  const item = await this.itemsRepository.preload(updateItemInput)
+  return await this.itemsRepository.save(item) <- fijate que el preload me hizo todo,genial
+}
+
+      VIDEO 57 ELIMINAR UN ITEM
+
+Antes de nada recordar que normalmente se hacen borrados lógicos(activo/inactivo) y no borrados físicos de la DB.
+Mantener el registro permitirá mantener la integridad referencial y hará una posible futura recuperación mucho más sencilla.Fijate que tuvimos que agregar el id manualmente por alguna razón lo borra el remove
+
+  async remove(id: string):Promise<Item> {
+    // TODO soft delete, integridad referencial
+    const item = await this.findOne(id);
+    // porqué remove antes que delete
+    await this.itemsRepository.remove(item);
+    // por alguna razon el id es undefined asi que usamos el argumento
+    return {...item,id};
+  }
+
+En la siguiente seccion crearemos relaciones entre entidades,integridades referenciales(los items serán de un usuario) y autenticación general.Superinteresante
+
+        SECCION 06 AUTENTICACION Y AUTORIZACION
+
+Mediante la autenticacion se puede saber quien es el usuario actual(correo,name,etc).La autorización es su rol,a cuanto tiene acceso.Perfectamente puede estar autenticado pero no autorizado para una operación.
+
+NOTA: fijate que la Auth es algo básico en una API.
+Esta sección está enteramente dedicada a la autenticación y autorización de usuarios, aquí veremos:
+
+1- Protección de queries y mutations
+2- Creación de usuarios desde GraphQL
+3- Login
+4- Revalidación de token de autenticación
+5- JWT
+
+      VIDEO 62 USER ENTITY,RESOLVER,SERVICIO Y AUTH
+
+Lo que haremos es proteger con algun tipo de Guard todo,si no está autenticado no podrá realizar la petición.De nuevo,otra alternativa es montar una REST para los endpoints de login y register
+Usaremos mutations esta vez(ya implementamos una REST auth en el curso de Nest básico).
+Lo primero creamos un resource
+>nest g res users --no-spec
+
+Despues arreglamos un poco el resolver y el service y creamos la Entity:
+
+@Entity({ name: 'users' })
+@ObjectType()
+export class User {
+  @PrimaryGeneratedColumn('uuid')
+  @Field(() => ID)
+  id: string;
+
+  @Column()
+  @Field(() => String)
+  fullName: string;
+
+  // unique a true crea un indice en el campo y por ello buscar por email es superrápido
+  @Column({ unique: true })
+  @Field(() => String)
+  email: string;
+
+  @Column()
+  // @Field(() => String) <- realmente no queremos ver este Field nunca
+  password: string;
+
+  @Column({ type: 'text', array: true, default: ['user'] })
+  @Field(() => [String!])
+  role: string[];
+
+  // ojo que no es bool
+  @Column({ type: 'boolean', default: true })
+  @Field(() => Boolean)
+  isActive: boolean;
+}
+Fijate en las opciones que puede llevar @Column como type,default o array a true
+
+      VIDEO 65 AUTH MODULE, RESOLVER/SERVICE Y TYPES
+
+NOTA: el modulo de auth depende del de users y el de users va a depender tmb del de auth,con lo que tenemos una dependencia cíclica.
+Fijate que Fernando ha elegido crear dos modulos porque asi vamos a terminar con una dependencia ciclica.Esto es algo que ya avisan en Nest de no hacer y evitar dependencias ciclicas pero a veces no es posible evitarlas como este caso tan comun además.
+
+Fijate tmb que es buena idea crear el resource sin el CRUD
+Eventualmente vamos a crear Guards tmb.
+
+      VIDEO 65 INPUT TYPES Y OBJECT TYPES INICIALES
+
+Fernando explica que en el controlador del register lo que hacemos es recibir data del front,con lo que va a ser un dto,pero en concreto de tipo input,luego creamos la carpeta dto/inputs y creamos el type SignUp.input.ts,por ejemplo
+NOTA:identifica la diferencia con un ArgType
+
+Asi pues creamos el IputType SignupInput :
+// recuerda que es este decorador el que hace que exista este tipo T en GraphQL
+@InputType()
+export class SignupInput {
+  
+  @Field(() => String, { description: 'Email del usuario' })
+  @IsEmail()
+  email:string;
+  
+  @Field(() => String, { description: 'Email del usuario' })
+  @IsString()
+  @IsNotEmpty()
+  fullName:string;
+  
+  @Field(() => String, { description: 'Email del usuario' })
+  // me gusta más @Length pero @MinLength(6) y sin max tmb es buena idea
+  @Length(6,50)
+  password:string;
+}
+
+Ahora nos falta un custom Object Type para la response al register y al login
+IMPORTANTE: fijate que la diferencia entre un Object Type y un Input Type es si el server espera por esa información,es decir,por la entrada de esa información(InputType) o si es un tipo para tipar una respuesta del server.En resumen para tipar el body de una request o el retorno de una response.Dado que necesitamos especificar el retorno de la Promise del register es pues un Object Type
+
+Bien,de momento el Object Type de retorno lucirá asi(props token y user de tipo User):
+
+@ObjectType()
+export class AuthResponse {
+  @Field(() => String)
+  token: string;
+
+  // recuerda que User es una entidad(va para la property de TS) y un ObjectType(va para el field)
+  @Field(() => User)
+  user: User;
+}
+
+En este punto el resolver queda perfectamente claro:
+@Mutation(() => AuthReponse,{name:'signup})
+async signup(@Args('signupInput') signupInput: SignupInput):Promise<AuthResponse>{
+  return this.authService.signup(signupInput)
+}
+
+El servicio obviamente debe devolver una AuthResponse pero podemos lanzar un Error temporalmente:
+
+  async signup(signupInput:SignupInput):Promise<AuthResponse>{
+    // recuerda que de forma temporal es buena idea lanzar un error ya que me encaja con el tipado lanzar un error
+    throw new Error('hay que implementar el signup del auth-service');
+  }
+
+ IMPORTANTE: para consumir servers/Apis hechas en GraphQL en el front se suelen usar librerias como apollo-client(recuerda los hooks useMutation o useQuery de otros cursos).
+
+        VIDEO 66 CREAR UN USUARIO
+
+NOTA: parece que puedo usar return await aunque consuma un poquito más(ya que crea una instancia de la clase Promise) dado que => always use await when calling async functions, except when it is immediately returned, except when it is in a try-catch is just ridiculous. Mejor pasar de esto de momento y ser redundante
+
+
+Ojo,la creacion del usuario le corresponde al módulo/entidad User y no a Auth,luego inyecto el repositorio en el servicio y creamos el service.
+Es a esta referencia circular a la que se referia Fernando.
+
+Vamos a empezar a usar bloques try/catch tmb:
+
+  async create(signupInput: SignupInput): Promise<User> {
+    try {
+      const newUser = this.usersRepository.create(signupInput);
+      return await this.usersRepository.save(newUser);
+    } catch (error) {
+      console.log(error);
+      throw new BadRequestException(
+        'Algo salio mal al crear un User => ',
+        error,
+      );
+    }
+  }
+
+Fijate que el camino del error no interfiere con el retorno especificado,los errores dan igual para el tipado especificado
+
+NOTA: si yo quiero usar un servicio de un modulo externo en el modulo actual tengo que importar el modulo que tiene ese servicio en los imports de mi modulo,asi como exportar ese Service desde ese modulo externo en los exports,ojo que es import del Module y export del Service:
+
+En el modulo externo exporto el Servicio:
+  exports:[UsersService] <- en los exports
+})
+export class UsersModule {}
+Y en el authModule importo este modulo:
+
+@Module({
+  imports:[UsersModule],
+  providers: [AuthResolver, AuthService],
+})
+export class AuthModule {}
+
+IMPORTANTE: el authModule solo va a importar lo que exporte ese UsersModule,con lo que al final solo se trae el servicio.Obviamente si no lo exporta el usersModule no se traerá nada.
+
+Ahora si,por fin puede el modulo auth usar los services exportados del odulo User,de momento hardcodeamos el token:
+
+  async signup(signupInput: SignupInput): Promise<AuthResponse> {
+    // STEP UNO crear un User 
+    const user = await this.usersService.create(signupInput);
+    // STEP DOS crear un token
+    return {
+      token:'122',
+      user
+    }
+    // throw new Error('method not implemented yet');
+  }
+
+Si llamamos al resolver creará el User con el rol por default,la pass sin encriptar,el token hardcodeado,etc.Genial
+
+      VIDEO 67 MANEJO DE ERRORES EN EL SIGNUP
+
+Si estamos en produccion es mejor tener un sistema de logs que nos diga exactamente en donde dió el error,que servicio,etc.Para este tipo de logs Nest expone la clase Logger.En este punto podemos hacer un método comun para gestionar los errores:
+
+private logger = new Logger();
+private handleDBErrors(error:any): never {
+  if(error.code ="23505"){
+    throw new BadRequestExpection(error.detail)
+  }
+  this.logger.error(error); 
+  throw new InternalServerErrorException(`Please check server logs`)
+}
+
+Y simplemente lo llamo cuando lo necesite:
+  async create(signupInput: SignupInput): Promise<User> {
+    try {
+      const newUser = this.usersRepository.create(signupInput);
+      return await this.usersRepository.save(newUser);
+    } catch (error) {
+      this.handleDBErrors(error);
+    }
+  }
+
+NOTA: al parecer GraphQL si que puede mandar status codes diferentes.Investigar
+
+        VIDEO 68 ENCRYPTING THE PASSWORD
+
+As programmer we should one-way hash the user's password after receiving the plain password in the register controller
+Note that I have to install the library firstly:
+>yarn add bcrypt 
+>yarn add -D @types/bcrypt
+
+CAREFUL,I have to import * as bcrypt with bcrypt(I think with bcryptjs is not necessary)
+
+  async create(signupInput: SignupInput): Promise<User> {
+    try {
+      const hashedPassword = bcrypt.hashSync(signupInput.password, 12);
+
+      const newUser = this.usersRepository.create({
+        ...signupInput,
+        password: hashedPassword,
+      });
+      //create no lo guarda,eso lo hace el save
+      return await this.usersRepository.save(newUser);
+    } catch (error) {
+      this.handleDBErrors(error);
+    }
+  }
+
+  From now any user will encrypt his password on register.
+
+          VIDEO 69 USER LOGIN IMPL
+
+Fernando is remarking that we should have those two controllers in another place(probably in a REST API),and not with GraphQL.Taking this into acount,we are going to create the login resolver.
+
+The first step will be creating the new input type:
+@InputType()
+export class LoginInput {
+  @Field(() => String, { description: 'Email del usuario' })
+  @IsEmail()
+  email: string;
+
+
+  @Field(() => String, { description: 'Password del usuario' })
+  @Length(6, 50)
+  password: string;
+}
+
+Then we can fill the auth resolver for the login:
+  @Mutation(() => AuthResponse, { name: 'login' })
+  async login(
+    @Args('loginInput') loginInput: LoginInput,
+  ): Promise<AuthResponse> {
+    return this.authService.login(loginInput);
+  }
+And after the resolver we create a basic version of that service.At this moment again the auth service should not have the interaction logic with DB:
+
+  async login({ email, password }: LoginInput): Promise<AuthResponse> {
+    // de nuevo debe ser el otro modulo el que interactue con la DB
+    const user = await this.usersService.findOneByEmail(email);
+
+    return {
+      token: 'ABC123',
+      user,
+    };
+  }
+  The other service is just trying to retrieve a User by Email
+
+        VIDEO 70 LOGIN PART 2
+
+We haven't done that much in this video,just compare the plain and encrypted passwords with bcrypt:
+
+  async login({ email, password }: LoginInput): Promise<AuthResponse> {
+    // de nuevo debe ser el otro modulo el que interactue con la DB
+    const user = await this.usersService.findOneByEmail(email);
+    // si llega aqui tenemos un user con acceso a su pass
+    const passwordsMatch = bcrypt.compareSync(password, user.password);
+    if(!passwordsMatch){
+      throw new BadRequestException(`Wrong credentials(password)`)
+    }
+    
+        VIDEO 71 PASSPORT MODULE AND JWT MODULE
+
+Remember to use connectors(linking words) on the formal essay:
+Despite, nevertheless(no obstante), event though, moreover,furthermore,additionally,on top of that,besides
+Always recheck the writings
+to show off=lucirse <- try to show off in the writings,asinto
+
+Theorically the impl is identical as in a REST API would be.We will use passport library in order to connect it with Nest(jwt strat):
+
+>yarn add @nestjs/passport passport @nestjs/jwt passport-jwt 
+>yarn add -D @types/passport-jwt
+
+We have to assemble some pieces now,first thing we have to register that 'jwt' strategy in the authModule(cuz it will use it).And for doing that we have to import the ConfigModule,etc :
+
+@Module({
+  imports: [
+    // ConfigModule no necesita más y es el que lee las env,como este modulo va a necesitar esto lo importamos
+    ConfigModule,
+    UsersModule,
+    PassportModule.register({
+      defaultStrategy: 'jwt',
+    }),
+    // este modulo JwtModule depende de que ConfigModule haya leido las env luego lo cargamos asincronamente
+    JwtModule.registerAsync({
+      imports:[ConfigModule],
+      // servicio inyectable para acceder a envs que debemos declarar
+      inject:[ConfigService],
+      useFactory:(configService:ConfigService) => {
+        console.log(configService.get('JWT_SECRET'))
+       return {
+        secret: configService.get('JWT_SECRET'),
+        signOptions:{
+          expiresIn:'4h'
+        }
+       } 
+      }
+    })
+  ],
+  providers: [AuthResolver, AuthService],
+})
+export class AuthModule {}
+
+    VIDEO 72 DEFINING THE JWT STRATEGY
+
+At this point we have only configured the top things,we have to define the jwt strategy. It will be a class,like almost everything in Nest:
+
+import { Injectable } from "@nestjs/common";
+import { PassportStrategy } from "@nestjs/passport";
+import { Strategy } from "passport-jwt";
+
+@Injectable()
+export class JwtStrategy extends PassportStrategy(Strategy) {
+  
+}
+
+Don't forget to provide the file in the module:
+  providers: [AuthResolver, AuthService,JwtStrategy],
+
+  VIDEO 73 GENERATING OUR JWT
+
+Ya con todo importado simplemente es inyectar una instancia de clase JwtService(libreria @nestjs/jwt).
+
+Para no repetirme creo una función que reciba el payload y devuelva el token:
+ private getJwtToken(id: string): string {
+    return this.jwtService.sign({ id });
+  }
+  
+Y los devuelvo en el servicio enganchado al resolver:
+async signup(signupInput: SignupInput): Promise<AuthResponse> {
+  // STEP UNO crear un User mediante inyección del otro service
+  const user = await this.usersService.create(signupInput);
+  // STEP DOS crear un token con la inyeccion de instancia de JwtService(libreria/implementación externa al core)
+  const token = this.getJwtToken(user.id);
+  return {
+    token,
+    user,
+  };
+}
+
+F11 para ir por linea(primero hay que poner un punto de ruptura).Con F8 voy de breakpoint en breakpoint(por eso me salgo si no hay mas).Tengo el depurador en Sources(atengo al boton ejecutar función de arriba).
+
+      VIDEO 74 JWTAUTHGUARD IMPLEMENTATION
+
+Por alguna razón Fernando no consigue que funcione el AuthGuard de la libreria passport.Lo vamos a sobreescribir/pisar:
+
+import { ExecutionContext } from "@nestjs/common";
+import { GqlExecutionContext } from "@nestjs/graphql";
+import { AuthGuard } from "@nestjs/passport";
+
+export class JwtAuthGuard extends AuthGuard('jwt'){
+  //! Override
+  getRequest(context:ExecutionContext){
+    // primero hay que crear un contexto
+    const ctx = GqlExecutionContext.create(context);
+    const request = ctx.getContext().req;
+    return request;
+  }
+}
+
+Este Guard hay que pasarlo al decorador @UseGuards:
+
+  @Query(() => AuthResponse, { name: 'revalidateJWT' })
+  @UseGuards(JwtAuthGuard) //ojo que es un decorador de método
+  revalidateToken(): AuthResponse {
+    // hay que mandar el email o el id
+    // return this.authService.revalidateToken();
+    throw new Error('revalidate not implemented');
+  }
+
+  Fijate como @UseGuards es un simple decorador de método para que cualquier método pueda usar uno o varios Guards:
+  import { UseGuards } from '@nestjs/common';
+
+        VIDEO 75 VALIDAR USUARIO DEL JWT
+
+Ya con el Guard estamos interceptando toda petición.En esta aplicación de pacotilla vamos a operar sobre el activado lógico del usuario y sobre si tiene el id válido
+
+Importante,fijate que el servicio de usuarios no debe de tener lógica sobre si el usuario está activo o no,simplemente debe traer el usuario y es responsabilidad del authService esa lógica:
+
+El usersService:
+  async findOneById(id: string): Promise<User> {
+    try {
+      // findOneOrFail si falla entra al catch(y el findOne no??)
+      return await this.usersRepository.findOneByOrFail({ id: id });
+    } catch (error) {
+      this.handleDBErrors({
+        code: 'error-404 warro',
+        detail: `User with id ${id} not found in the DB`,
+      });
+    }
+  }
+
+  El authService:
+    async validateUser(id: string): Promise<User> {
+    // buscamos el user
+    const user = await this.usersService.findOneById(id);
+    //  si está inactivo lanzamos un error
+    if (!user.isActive) 
+      throw new UnauthorizedException(`User is inactive`);
+    
+    // borramos la password ya que también la trajimos de la DB
+    delete user.password;
+    return user;
+  }
+
+        VIDEO 76 CUSTOM DECORATOR CURRENTUSER
+
+Nota: si bien puedo ir decorando cada @Query con el decorador @UseGuards normalmente se pone a nivel de resolver:
+
+  @Query(() => AuthResponse, { name: 'revalidateJWT' })
+  @UseGuards(JwtAuthGuard) // <- normalmente protegeŕe el resolver
+  revalidateToken(): AuthResponse {
+    throw new Error('revalidate not implemented');
+  }
+  También importante se recomienda que no sea GraphQL el qu tenga el register y el login,sino que haya una REST protegiendo al server de GraphQL
+
+Realmente nos falta mandar el id a la query de revalidateToken,y para ello necesitamos el CurrentUser,pero como acedemos a eĺ? 
+Lo más sencillo es crear un Custom Decorator que devuelva el user:
+
+IMPORTANTE: lo que devuelva en el validate de la Strategy se pega a la request:
+  async validate(payload: JwtPayload):Promise<User>{
+    const {id} = payload;
+    const user = await this.authService.validateUser( id );
+    return user; <- request.user tengo el user
+    
+  }
+
+Bien, para crear un decorador simplemente necesito la funcion createParamDecorator(factoryFn).Fijate como esa función me trae los roles y el contexto por naturaleza.
+
+export const CurrentUser = createParamDecorator( (
+  roles=[], context: ExecutionContext
+) => {
+  const ctx = GqlExecutionContext.create(context);
+  const user = ctx.getContext().req.user;
+  if(!user){
+    throw new InternalServerErrorException(`No user inside the request`)
+  }
+  return user;
+})
+
+Solo falta llamarlo(fijate que es una funcion,tengo que ejecutarla o solo estaré pasando la referencia al decorador):
+
+  @Query(() => AuthResponse, { name: 'revalidateJWT' })
+  @UseGuards(JwtAuthGuard) //ojo que es un decorador de método
+  revalidateToken( @CurrentUser() user:User): AuthResponse { <- ojo que es @Decorator() y no @Decorator
+    throw new Error('revalidate not implemented');
+  }
+
+        VIDEO 78 AUTORIZACIÓN DE USUARIOS - ROLES
+
+Importante,en una enumeración el asignar los valores es opcional.Podria tener una enum asi, aunque los valores serían accedidos por indice:
+
+export enum ValidRoles {
+  admin,
+  user,
+  superUser
+}
+
+ValidRoles[0] no es la mejor forma,asi que se suele asignar un valor(y asi pisar al indice)
+
+export enum ValidRoles {
+  admin = "Admin",
+  user = "User",
+  superUser= "SuperUser",
+}
+
+Importante,el decorador custom que creamos ya le hemos puesto el argumento de los roles(esto es algo ya propio de esa funcion y no nuestro).
+
+Asi pues, cambiamos el decorador que saltará en cada petición y teniendo acceso al user podemos salvaguardar cualquier Query o Resolver ya por rol:
+
+La Query pedirá un rol:
+  @Query(() => AuthResponse, { name: 'revalidateJWT' })
+  @UseGuards(JwtAuthGuard) //ojo que es un decorador de método
+  revalidateToken(@CurrentUser([ValidRoles.admin]) user: User): AuthResponse {
+    return this.authService.revalidateToken(user);
+  }
+
+Y el decorador no dejará pasar
+export const CurrentUser = createParamDecorator(
+  (roles: ValidRoles[], context: ExecutionContext) => {
+    // normalmente tendré que pasar el contexto de Nest a GraphQL si uso GraphQL
+    const ctx = GqlExecutionContext.create(context);
+    // del context quiero la request(ctx.getContext().req) y despues el user
+    const user :User = ctx.getContext().req.user;
+    if (!user) {
+      // siempre debe haber un user en la request,es fallo de back si entramos aqui
+      throw new InternalServerErrorException(`No user inside the request`);
+    }
+
+    if (roles.length === 0) return user;
+    for (const role of user.roles) {
+      if (roles.includes(role as ValidRoles)) {
+        return user;
+      }
+    }
+    // si llegamos aqui no tiene el rol necesario
+    throw new ForbiddenException(`User ${user.fullName} need a valid role[${roles}]`)
+
+    SECCION 07 USUARIOS Y ENUMERACIONES - ADMIN ROLES
+
+Para el mantenimiento de usuarios de esta sección vamos a tener que ser admin primeramente.Podremos buscar usuarios por rol o roles,actualizar usuarios por Id,en resumen,todo lo relacionado a la gestión y mantenimiento de usuarios
+
+Esta sección está llena de cosas interesantes como:
+1- Relaciones ManyToOne a la misma tabla
+2- Actualización de usuarios
+3- Bloqueo de usuarios
+4- Protección del GqlSchema
+5- Módulo asíncronos
+6- Factory functions
+7- Uso de módulos en factory functions
+8- Roles y actualización de usuario que modifica registros.
+
+      VIDEO 84 CONTINUACION
+
+TIP: puedo ver por consola que la última linea de levantar el proceso dice:
+Mapped {/graphql, POST } route.Esto es porque el endpoint de GraphQL es un POST, obviamente tiene sentido que sea un POST.
+Levantamos la aplicación,el contenedor y realizamos cualquier Query para comprobar que funciona la DB.Creamos un usuario que sea admin tmb
+
+      VIDEO 85 CUSTOM ARGS VALIDROLES
+
+Las enumeraciones en GrapQL funcionan exactamente igual a las enumeraciones en Typescript.
+IMPORTANTE: cuando use @Args('anyName') en un resolver eso siempre va a venir como un string.Recuerda que hemos tenido el mismo problema cuando queriamos un número(ya que ahora queremos un arreglo).Esto es porque @Args viaja como un query param en el GET(algo asi)
+
+ @Query(() => [User], { name: 'getAllUsers' })
+  findAll(@Args('validRoles') validRoles: string[]) <- da igual que yo diga que quiero un arreglo,me viene un string y hay que hacer transformación de datos
+  : Promise<User[]> {
+    console.log({ validRoles });
+    return this.usersService.findAll();
+  }
+
+Memorizo que @ArgsType() lo que hace es especificar a GraphQl que lo que esté decorando es un tipo personalizado válido para poder mandarlo como argumento,etc.
+
+// recuerda que para que esta clase sea un tipo reconocible por GraphQl necesito decorar la clase con @ArgsType y la propiedad con @Field
+@ArgsType()
+export class ValidRolesArgs {
+
+  // recuerda que con class-validator puedo validar cualquier property
+  @Field(() => [String],{nullable:true })
+  @IsArray()
+  roles:  string[] = []
+}
+
+Ahora si,ya tengo el tipo creado para los argumentos de ese resolver,de echo,debemos incluso quitar el nombre del argumento,porque GraphQL ya sabe como luce y choca contra @Args('validRoles')
+
+  @Query(() => [User], { name: 'getAllUsers' })
+  findAll(@Args() validRoles: ValidRolesArgs): Promise<User[]> {
+    console.log({ validRoles });
+    return this.usersService.findAll();
+  }
+
+  Genial, queda bien claro como crear nuestro custom argument y que luzca como queramos
+
+
+          VIDEO 86 GRAPHQL ENUMERATIONS
+
+Si bien puede parecer que son muchas cosas entiendo que si estuviera full back haciendo esto sería todo superobvio.En este video vemos que nos faltaba registrar la enum de typescript para que GraphQl la identifique perfectamente en el decorador @Field:
+
+@ArgsType()
+export class ValidRolesArgs {
+
+  // recuerda que con class-validator puedo validar cualquier property
+  @Field(() => [ValidRoles],{nullable:true }) <- dado que @Field es de GraphQl no va  a saber interpretar ValidRoles sin registrarla(pero porque no usamos el schema?? es porque es una enumeración??) <- idiota,estamos en schemaless por eso hay que registrarla asi,si tuvieramos acceso al schema no hace falta registrar la enum
+  @IsArray()
+  roles:  string[] = []
+
+}
+
+import { registerEnumType } from "@nestjs/graphql";
+
+//  TIP las enums de GraphQL son iguales que las de Typescript
+export enum ValidRoles {
+  admin = 'admin',
+  user = 'user',
+  superUser = 'superUser',
+}
+
+// NOTA para implementar la enum como un GraphQl Type tenemos que usar el método registerEnumType(enum,{name:''}).Fijate que este paso ha sido crucial
+registerEnumType(ValidRoles,{name:'ValidRoles'})
+Obviamente nos falta hacer la query que haremos con un queryBuilder contra la DB
+
+    VIDEO 87 EJECUTAR CONSULTA EN POSTGRESQL CON ARREGLOS
+
+En este punto vamos a hacer una queryBuilder usando la documentación con la sintaxis que ellos requieren (https://www.postgresql.org/docs/9.6/functions-array.html):
+
+  async findAll(roles: ValidRoles[]): Promise<User[]> {
+    // si no vienen roles devolvemos todos los users
+    if(roles.length === 0) return await this.usersRepository.find();
+    // 
+    return this.usersRepository.createQueryBuilder()
+    // realmente nos valia un unico where() pero asi vemos otra forma
+    // ARRAY[name] contains ARRAY[:...parameter] <- porque es un parametro
+    .andWhere('ARRAY[roles] && ARRAY[:...roles]')
+    .setParameter('roles',roles) // necesario,evita SQL injection
+    .getMany();
+  }
+
+  Al final es seguir su sintaxis,pero de nuevo es muy interesante todo lo que se puede llegar a construir,dejando un backend terrible
+
+    VIDEO 88 PROTEGER TODOS LOS QUERIES DE USUARIOS NO ADMIN
+
+Una forma muy sencilla de proteger las queries a GraphQl sería usar un decorador a nivel de clase,decorador que ya hemos usado y tenemos implementado:
+
+@Resolver(() => User)
+@UseGuards(JwtAuthGuard)
+export class UsersResolver {
+
+Sin embargo esto solo evita que hagan consultas usuarios no autenticados,pero queremos que además sean admin, no sólo cualquier usuario.
+
+Realmente es bastante sencillo, simplemente tengo que pasar a cada resolver nuestro custom decorador @CurrentUser([role]) con un arreglo de roles permitidos:
+
+@Query(() => [User], { name: 'getAllUsers' })
+  findAll(
+    @Args() validRoles: ValidRolesArgs,
+    @CurrentUser([ValidRoles.admin]) user: User
+    ): Promise<User[]> {
+      console.log({user})
+    return this.usersService.findAll(validRoles.roles);
+  }
+
+Fijate que todo lo que está haciendo es básico en cualquier backend,es lo mínimo.Desde luego esto podría servirme perfectamente.
+
+        VIDEO 90 BLOQUEAR UN USUARIO
+
+Basicamente para bloquear un usuario lo que vamos a hacer es un borrado lógico,pero además vamos a añadir una columna con el usuario que realizó la modificación
+En este video solo vamos a crear la columna,para ello hay que ir a la clase con la @Entity de TypeORM:
+
+ @ManyToOne(() => User, (user) => user.lastUpdateBy, { nullable: true })
+  @JoinColumn({name:'lastUpdateBy'})
+  // hasta aqui sería suficiente para typeorm(decoradores @ManyToOne y @JoinColumn).Puede ser nulo pues mientras no se haga un update lo es
+  @Field(() => User, { nullable: true })
+  lastUpdateBy?: User;
+
+No debo confundir decoradores para TypeORM o para GraphQL,que tengo que usar todos.Fijate que la relación es @ManyToOne(() => T, (user) => user.field) donde T es el tipo del que se relaciona, y despues (user) => (user.lastUpdateBy) es donde se relaciona en esta entidad(entiendo que si en vez de otro User seria otra tabla el User primero cambiaria)
+
+    VIDEO 91 EAGER AND LAZY RELATIONS
+
+Docu: https://orkhan.gitbook.io/typeorm/docs/eager-and-lazy-relations
+Realmente es muy sencillo poblar esta columna,pero puedo apreciar que si hago un getAll no me viene esta columna.GraphQL no va a popular campos con relaciones por mi, tengo que especificar esto
+
+NOTA: las relaciones eager solo funcionan con metodos find(como el findOne).Si uso QueryBuilder las relaciones eagaer están deshabilitadas por defecto y tengo que usar leftJoinAndSelect para cargar la relacion.
+
+Fijate que ese eager a true solo funciona cuando hay relacion entre tablas distintas, en este caso es de una instancia de la tabla/entidad a la misma tabla.Una solucion es usa el leftJoin pero parece realmente complicado hacerlo en la misma tabla,asi que simplemente vamos a usar lazy a true que tmb va bien.
+En este punto parece muy confuso todo,la docu está diciendo que hay que usar promesas si uso lazy pero simplemente con el boleano valió.Obviamente debió profundizar más pero supongo que no supo hacerlo:
+
+  @ManyToOne(type => User, (user) => user.lastUpdateBy, { 
+    nullable: true,
+    // en este caso el eager no funciona por que para que funcione tiene que ser de una tabla a otra,en este caso es de una tabla a la misma(y hace dependencia circular y se lia)
+    // eager:true
+    lazy:true <- simplemente añado esto y ya
+   })
+
+Fijate que en el find tuvimos que usar la propiedad relations(pero al usar lazy ya no hace falta, perono se cargaban solos los find ??):
+  
+  if (roles.length === 0) return await this.usersRepository.find({
+      relations:{ <- ya no es necesario
+        lastUpdateBy:true
+      }
+    });
+
+      VIDEO 92 ACTUALIZAR UN USUARIO
+
+IMPORTANTE: todas las propiedades que vengan de un PartialType son opcionales,asi que en este caso puedo apreciar como solo es obligatorio el Id:
+
+ todo lo del CreateUserInput pasa a ser opcional en este tipo(pero no lo es en el create,claro)
+@InputType()
+export class UpdateUserInput extends PartialType(CreateUserInput) {
+  
+  @Field(() => ID)
+  @IsUUID()
+  id: string;
+}
+
+Confia en ti,pargelas, ponte el postman, estaté más atento a los deploys y delega y confia en tu equipo.Lo vas a hacer bien
+
+Fijate que no nos llega con el Partial + el id,nos falta el isActive y los roles,que obviamente deben ser opcionales
+Además tengo que usar @Field y decirle que son nullables(ojo el decorador de GraphQl dejará que sea null en GraphQL,pero tiene que ir a la par con TypeORM):
+
+@InputType()
+export class UpdateUserInput extends PartialType(CreateUserInput) {
+  @Field(() => ID)
+  @IsUUID()
+  id: string;
+
+  @Field(() => [ValidRoles], { nullable: true })
+  @IsArray()
+  @IsOptional()
+  roles?: ValidRoles[]; <- si es nullable para GraphQL lo deberia ser para TypeORM
+
+  @Field((type) => Boolean, { nullable: true })
+  @IsBoolean()
+  @IsOptional()
+  isActive?: boolean;
+}
+
+En el servicio recuerda que tengo que usar el método preload + operaciones intermedias + despues el save:
+
+  async update(
+    id: string,
+    updateUserInput: UpdateUserInput,
+    adminUser: User,
+  ): Promise<User> {
+    try {
+      const userToUpdate = await this.usersRepository.preload(updateUserInput);
+      userToUpdate.lastUpdateBy = adminUser;
+      return await this.usersRepository.save(userToUpdate);
+    } catch (error) {
+      this.handleDBErrors(error);
+    }
+  }
+Genial,todo bien claro.Fijate que actualizar los roles va perfecto tmb.
+
+        VIDEOS 93-94 BLOQUEAR UN SCHEMA DE GQL
+
+Dado que normalmente los métodos de auth no suelen estar controlados por GraphQL sino por una API REST normal es buena idea bloquear todo el schema si no estamos autenticados y que incluso no podamos ver nada del schema, fijate que ahora podemos ver todo.
+Desde luego será algo que se use en ambientes laborales masivamente.
+
+Para hacer esto tenemos que hacer ciertas modificaciones en nuestra app(hay varias formas de bloquear el schema, nosotros vamos a tratar de validar el token en el app.module y cargar asíncronamente el Modulo de GraphQl)
+
+Un modulo asíncrono no es más que un módulo que se hace(o monta,o carga,..) a destiempo.Es decir,cuando yo hago el bootstrap(levantar la app) de mi app puedo ver en la consola que se cargan primero los modulos sincronos y despues los asincronos
+
+Ejemplo de la salida por consola
+Nest] 413805  - 30/07/2023 17:44:14     LOG [InstanceLoader] GraphQLSchemaBuilderModule dependencies initialized +0ms                                               [10/26]
+[Nest] 413805  - 30/07/2023 17:44:14     LOG [InstanceLoader] GraphQLModule dependencies initialized +1ms                                                                   
+[Nest] 413805  - 30/07/2023 17:44:14     LOG [InstanceLoader] TypeOrmCoreModule dependencies initialized +54ms                                                              
+[Nest] 413805  - 30/07/2023 17:44:14     LOG [InstanceLoader] TypeOrmModule dependencies initialized +0ms                                                                   
+[Nest] 413805  - 30/07/2023 17:44:14     LOG [InstanceLoader] TypeOrmModule dependencies initialized +0ms                                                                   
+[Nest] 413805  - 30/07/2023 17:44:14     LOG [InstanceLoader] ItemsModule dependencies initialized +2ms                                                                     
+[Nest] 413805  - 30/07/2023 17:44:14     LOG [InstanceLoader] UsersModule dependencies initialized +0ms                                                                     
+[Nest] 413805  - 30/07/2023 17:44:14     LOG [InstanceLoader] AuthModule dependencies initialized +0ms                                                                      
+[Nest] 413805  - 30/07/2023 17:44:14     LOG [GraphQLModule] Mapped {/graphql, POST} route +124ms                                                                           
+[Nest] 413805  - 30/07/2023 17:44:14     LOG [NestApplication] Nest application successfully started +3ms                                                                   
+[Nest] 413805  - 30/07/2023 17:44:14     LOG [Bootstrap] Nest running on port 3000
+
+TIP: fijate que siempre que tengo el playground de Apollo abierto está haciendo una petición cada 0.5seg al backend.Ojo con esto
+
+Ahora si, realmente es bastante sencillo lo que hizo Fernando,simplemente usamos forRootAsync en el modulo de GraphQl y gracias a que al cargar asincronamente un modulo puedo pedir otros y/o inyectar lo que quiera simplemente validamos el token:
+
+ imports: [
+    ConfigModule.forRoot(),
+    /*     GraphQLModule.forRoot<ApolloDriverConfig>({
+      driver: ApolloDriver,
+      playground: false,
+      // process.cwd es la carpeta donde se está ejecutando el proyecto
+      autoSchemaFile: join(process.cwd(), 'src/schema.gql'),
+      // este plugin es para levantar el Apollo Studio
+      plugins: [ApolloServerPluginLandingPageLocalDefault()],
+    }), */
+    GraphQLModule.forRootAsync<ApolloDriverConfig>({
+      driver: ApolloDriver,
+      // fijate que puedo importar en esta carga asincrona lo que quiera,obviamente vamos a necesitar el AuthModule
+      imports: [AuthModule],
+      // pero fijate que incluso puedo inyectar servicios,y de nuevo necesitamos el JwtService(para comprobar si el token es válido)
+      //ojo,inyectarlo no lo instancia,esto es tarea del useFactory
+      inject: [JwtService],
+      // mediante este useFactory: async() =>  vamos a construir lo que necesitemos y despues retornarlo.Obviamente tengo que retornar lo mismo,quitando el driver que me subió un nivel,y ojo,que añadimos el context
+      useFactory: async (jwtService: JwtService) => {
+        return {
+          playground: false,
+          autoSchemaFile: join(process.cwd(), 'src/schema.gql'),
+          plugins: [ApolloServerPluginLandingPageLocalDefault()],
+          context({ req }) {
+            const token = req.headers.authorization?.replace('Bearer ', '');
+            const payload = jwtService.decode(token)
+            // en este punto si alguien abre el Apollo Studio y no hay token podriamos monitorizar todo esto por seguridad,etc o avisar como quisieramos
+            if(!token) throw new Error('Token needed')
+            if(!payload) throw new Error('Token not valid')
+          },
+        };
+      },
+    }),
+
+    Fijate que un alumno dice que normalmente se usa una propiedad llamada introspection que va a false en produccion y listo.Jeje:
+
+    GraphQLModule.forRootAsync<ApolloDriverConfig>({
+      driver: ApolloDriver,
+      imports: [ConfigModule],
+      useFactory: async (configService: ConfigService) => {
+        return {
+          playground: false,
+          autoSchemaFile: join(process.cwd(), 'src/schema.gql'),
+          introspection: configService.getOrThrow<boolean>(
+            'GRAPHQL_INTROSPECTION',
+          ), // Generally false for production <- CLAVE DE TODO
+          plugins: [ApolloServerPluginLandingPageLocalDefault()],
+        };
+      },
+      inject: [ConfigService],
+    }),

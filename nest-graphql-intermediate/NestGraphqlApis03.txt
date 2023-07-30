@@ -1,0 +1,16 @@
+      SECCION 08 RELACIONANDO PRODUCTOS CON USUARIOS + PETICIONES AUTENTICADAS
+
+Esta sección está enfocada en:
+
+  1- Relaciones user - item
+  2- Validaciones
+  3- Consultas por usuario
+  4- Indices
+  5- LazyRelationships
+
+El objetivo es empezar a caminar a que cada usuario sea dueño de su porción de data sin mezclar la información de unos usuarios con la de los otros.Interesante
+
+      VIDEO 99 CREANDO LA RELACION ENTRE PRODUCTO Y USUARIO
+
+      
+

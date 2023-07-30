@@ -2,16 +2,31 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Todo } from './entity/todo.entity';
 import { CreateTodoInput } from './dto/inputs/create-todo.input';
 import { UpdateTodoInput } from './dto/inputs/update-todo.input';
+import { StatusArgs } from './dto/args/status.args';
 
 @Injectable()
 export class TodosService {
   private todos: Todo[] = [
     { id: 1, description: 'Piedra del alma', done: false },
-    { id: 2, description: 'Piedra del espacio', done: true },
+    { id: 2, description: 'Piedra del espacio', done: false },
     { id: 3, description: 'Piedra del poder', done: false },
   ];
 
-  findAll(): Todo[] {
+  // en javascript puedo crear un getter sobre lo que quiera,diria que siempre fue extrapolable esta funcionalidad a toda la OOP
+  get totalTodos() {
+    return this.todos.length;
+  }
+  get completedTodos() {
+    return this.todos.filter((todo) => todo.done).length;
+  }
+  get pendingTodos() {
+    return this.todos.filter((todo) => !todo.done).length;
+  }
+
+  findAll(status: StatusArgs): Todo[] {
+    if (status.status !== null) {
+      return this.todos.filter((todo) => todo.done === status.status);
+    }
     return this.todos;
   }
 
