@@ -19,7 +19,7 @@ export const CurrentUser = createParamDecorator(
       throw new InternalServerErrorException(`No user inside the request`);
     }
  
-    if (roles.length === 0) return user;
+    if (!roles || roles.length === 0) return user;
     for (const role of user.roles) {
       // TODO eliminar casteo
       if (roles.includes(role as ValidRoles)) {

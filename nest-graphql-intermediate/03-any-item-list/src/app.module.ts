@@ -9,6 +9,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtService } from '@nestjs/jwt';
+import { SeedModule } from './seed/seed.module';
+import { CommonModule } from './common/common.module';
 
 @Module({
   imports: [
@@ -38,8 +40,8 @@ import { JwtService } from '@nestjs/jwt';
             const token = req.headers.authorization?.replace('Bearer ', '');
             const payload = jwtService.decode(token)
             // en este punto si alguien abre el Apollo Studio y no hay token podriamos monitorizar todo esto por seguridad,etc o avisar como quisieramos
-         /*    if(!token) throw new Error('Token needed')
-            if(!payload) throw new Error('Token not valid') */
+            //  if(!token) throw new Error('Token needed')
+            // if(!payload) throw new Error('Token not valid') 
           },
         };
       },
@@ -63,6 +65,8 @@ import { JwtService } from '@nestjs/jwt';
     ItemsModule,
     UsersModule,
     AuthModule,
+    SeedModule,
+    CommonModule,
   ],
   controllers: [],
   providers: [],

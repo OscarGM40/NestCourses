@@ -12,5 +12,358 @@ El objetivo es empezar a caminar a que cada usuario sea dueño de su porción de
 
       VIDEO 99 CREANDO LA RELACION ENTRE PRODUCTO Y USUARIO
 
-      
+Basicamente tengo que añadir las relaciones y las columnas faltantes.En la entidad de item añado el campo user:
 
+@Entity({ name: 'items' })
+@ObjectType()
+export class Item {
+
+  // realmente son muchos articulos pueden pertenecer a un usuario, es dificil de verlo,pero no es oneToMany o no podrian comprar más de uno,tiene que ser ManyToOne
+  @ManyToOne(type => User,(user) => user.items)
+  @Field(() => User)
+  user:User;
+}
+
+TIP: recuerda que el decorador @ObjectType() es necesario para GraphQL.
+En la entidad del usuario añadimos ese campo items tmb:
+
+  @OneToMany(type => Item,(item) => item.user)
+  @Field(() => [Item])
+  items: Item[];
+
+Y dado que hemos quitado tmb el campo quantity(porqué hizo esto??) algunos resolvers darán fallo, asi que vamos a ir poco a poco resolviendo todo.
+
+           VIDEO 100 CREAR ITEMS ASOCIADOS A EL USER (INDICES)
+
+Empecemos dejando bien la creación de un item,al cual algun usuario debe relacionarse por fuerza ya que no se compran solos.
+Lo interesante de esto es que vamos a crear indices que aceleran las busquedas.Además, si ahora llamamos a un item veremos que en el resolver no tenemos controlado que no venga un user,esto no puede ser:
+
+  @ManyToOne((type) => User, (user) => user.items, { nullable: false })
+  @Index()
+  @Field(() => User)
+  user: User;
+Vamos a añadir un indice a esta columna para que las queries sean un poco más rápidas.
+
+Fijate que puedo crear indices sobre grupos de columnas(y que puedo crear varios,inclusive con las mismas columnas como est ejemplo ↓↓):
+@Entity()
+@Index(["firstName", "lastName"])
+@Index(["firstName", "middleName", "lastName"], { unique: true })
+export class User {
+  ...
+}
+Por cierto,es el currentUser es que esta pegando en la request el usuario.De nuevo hay muchas cosas interesantes en este curso.
+
+      VIDEO 101 FIND ALL ITEMS DE UN USUARIO
+
+Tal como tenemos ahora el resolver nos va a traer todos los items.No queremos eso,queremos traer todos los items de un usuario concreto(findAllItemsBy).
+NOTA: fijate como tengo que mandar la propiedad relations para que haga el populate, si no no voy a poder filtrar por campos de la entidad relacionada:
+
+  async findAll(user: User): Promise<Item[]> {
+    return await this.itemsRepository.find({
+      relations: ['user'],
+      where: {
+        user: {
+          id: user.id,
+        },
+      },
+    });
+  }
+Fijate como a Fernando no le pidió popular las relaciones,a saber porqué   
+
+      VIDEO 102 FIND ONE Y REMOVE ITEM
+
+Actualmente podemos buscar cualquier articulo por su Id.No queremos poder buscar articulos de otros usuarios.Esta tarea es muy sencilla,simplemente hay que buscar por ambas coincidencias.
+Sin embargo fijate de nuevo que no se populan las subentidades, asi que si queremos ver el user al pedir un articulo tenemos que especificarlo.Una forma es con la propiedad relations,otra es poner eager o lazy a true en el campo de la DB:
+
+  async findOne(id: string, user: User): Promise<Item> {
+    const item = await this.itemsRepository.findOne({
+      relations:['user'],
+      where: {
+        id: id,
+        user: {
+          id: user.id,
+        },
+      },
+    });
+    if (!item) throw new NotFoundException(`Item with id ${id} not found`);
+    return item;
+  }
+
+    VIDEO 103 UPDATE AN ITEM
+
+De nuevo no podemos actualizar un item que no sea nuestro.En este punto simplelmente con pasar el usuario y usar el findOne nos valdría:
+
+  async update(
+    id: string,
+    updateItemInput: UpdateItemInput,
+    user: User,
+  ): Promise<Item> {
+    
+    const item = await this.findOne(id, user);
+    if (updateItemInput.name) item.name = updateItemInput.name;
+    if (updateItemInput.quantityUnits) item.quantityUnits = updateItemInput.quantityUnits;
+    return await this.itemsRepository.save(item);
+
+    VIDEO 104 BUSCAR ITEMS POR USUARIO
+
+Nada nuevo,simplemente añadimos lazy a true en la entidad de usuario en la propiedad items para que los pida siempre:
+
+  @OneToMany((type) => Item, (item) => item.user, { lazy: true })
+  @Field(() => [Item])
+  items: Item[];
+
+    VIDEO 105 DECORADORES @ResolveField y @Parent
+
+Seria bastante útil que en el usuario tengamos una propiedad como itemCount que nos diga cuantos items tiene ese usuario (asi además aprovechamos los indices ya creados)
+
+IMPORTANTE: podemos crear propiedades 'al vuelo', que no fueran parte original del schema, pero si de la respuesta de un resolver,es lo que queremos que sea itemCount.Para ello tengo el decorador @ResolveField:
+
+  // con el decorador @ResolveField( type, options?) estamos modificando nuestro esquema y especificando que vamos a tener un nuevo campo que será la resolución de este método
+
+  @ResolveField((type) => Int, { name: 'itemCount' })
+  async itemCount(@Parent() user: User): Promise<number> {
+    console.log({ user });
+    return 10;
+  }
+
+  Fijate que es una modificación del schema,entiendo que en Front al adaptarlo sería un dto diferente de la Entity,etc
+
+  NOTA: como itemCount es una propiedad que es parte de un objeto(del User) podemos tener acceso a todo ese User.Para ello tengo el decorador @Parent tmb disponible:
+
+Gracias pues a ambos decoradores puedo simplemente contar los items.Ojo,que es lógica para el servicio y no el resolver,siempre seguir buenas prácticas.
+
+IMPORTANTE: el servicio va en el items.service pero lo consume el user.resolver.Esto implica que en el items.module tengo que exportar ese servicio(y de paso vamos a exportar el TypeORM,que me valdría si alguien quiere acceder al itemsRepository,entiendo):
+
+@Module({
+  imports: [TypeOrmModule.forFeature([Item])],
+  providers: [ItemsResolver, ItemsService],
+  exports: [ItemsService],
+})
+export class ItemsModule {}
+
+Y ojo, que lo tiene que importar el modulo de users,tmb,siempre se te olvida esto:
+
+@Module({
+  imports:[
+    TypeOrmModule.forFeature([User]),
+    ItemsModule
+  ],
+  providers: [UsersResolver, UsersService],
+  exports:[UsersService]
+})
+export class UsersModule {}
+
+Ahora ya podemos llamar al servicio del otro modulo:
+
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly itemsService: ItemsService,
+    ) {}
+
+  @ResolveField((type) => Int, { name: 'itemCount' })
+  async itemCount(@Parent() user: User): Promise<number> {
+    return this.itemsService.itemCountByUser(user);
+  }
+
+  Fijate que es superinteresante poder crear una propiedad 'fake' aunque para el front será totalmente transparente esto
+
+      SECCION 09 CARGAR Y PURGAR LA DB
+
+Fijate que estas operaciones en un entorno empresarial son supernecesarias y superútiles.En resumen es algo básico a implementar.
+
+    VIDEO 110 SEED RESOLVER
+
+Como queremos insertar,modificar o borrar técnicamente crearemos una Mutation.La llamaremos ExecuteSeed.En este punto podemos usar la cli de Nest(con nest generate resource <name> --no-spec):
+
+oscar@linux:/media/oscar/any-item-list$ nest g res seed --no-spec
+? What transport layer do you use? GraphQL (code first)
+? Would you like to generate CRUD entry points? No
+CREATE src/seed/seed.module.ts (217 bytes)
+CREATE src/seed/seed.resolver.ts (193 bytes)
+CREATE src/seed/seed.service.ts (88 bytes)
+UPDATE src/app.module.ts (3045 bytes)
+
+Fijate que esto nos crea un nuevo modulo,y que vamos a pedir los dos repositorios(junto con sus servicios), asi que tengo que exponerlos primero en sus modulos e importarlos despues en éste:
+
+En el items.module.ts (lo mismo en el users.module.ts)
+@Module({
+  imports: [TypeOrmModule.forFeature([Item])],
+  providers: [ItemsResolver, ItemsService],
+  exports: [ItemsService, TypeOrmModule],
+})
+export class ItemsModule {}
+
+      PASO UNO - PROTECCION
+
+Dado que hemos embebido el register en la app no podemos proteger por el bearer token este resolver.Si tuvieramos la Auth externalizado si que iria bien,pero vamos a tener que utilizar otra forma de protección que el UseGuard anterior
+
+Lo que vamos a hacer es leer las variables de entorno simplemente y si estamos en prod que no haga nada.Fijate que esto implica importar el configModule en este modulo, aparte de su debida inyección.
+
+@Injectable()
+export class SeedService {
+  private isProd: boolean;
+
+  constructor(
+    private readonly configService: ConfigService,
+  ) {
+    // isProd va a ser true solo en producción
+    this.isProd = this.configService.get('STATE') === 'prod';
+  }
+
+  async executeSeed(): Promise<boolean> {
+    if (this.isProd) {
+      throw new UnauthorizedException(
+        'We cannot run these kind of operations in production,asinto',
+      );
+    }
+  
+      PASO DOS - BORRAR LA BASE DE DATOS
+
+Obviamente nos referimos a limpiar los registros,no ha borrar todo.Fijate que hay que borrar teniendo en cuenta la integridad referencial de la DB, primero los items y despues los users o no podré borrar users con items por ser muy asinto
+
+En este punto Fernando opta por usar :
+await this.itemsRepository.createQueryBuilder()
+  .delete()
+  .where({})
+  .execute();
+
+Fijate que el clear que hace un Truncate parece que no termina de romper las foreign keys y no va bien.
+
+      PASO TRES - CREAR NUEVOS USUARIOS
+      
+Simplemente inyecto el servicio ya que tenemos un método que ya encripta la password.Fijate que el forof va bastante bien para iterar arrays de objectos:
+
+  async loadUsers(): Promise<User[]> {
+    const users = [];
+    for (const user of SEED_USERS) {
+      users.push(await this.usersService.create(user));
+    }
+    return users;
+  }
+
+      PASO CUATRO - CREAR ITEMS
+
+NOTA: el método Math.Random devuelve un flotante entre 0 y menor que 1(luego nunca va a devolver un 1,como me dijeron,asi que nunca me va a dar 3 y está perfecto)Además los resultados estarán distribuidos uniformemente entre el 0 y el 0.99999999999.Genial
+
+Sabiendo esto puedo llamar al service que crea el item y me pide un user,metiendo un user de forma aleatoria
+
+  async loadItems(): Promise<void> {
+    const users = await this.usersRepository.find({});
+
+    for (const item of SEED_ITEMS) {
+      const randomIndex = Math.floor(Math.random() * users.length);
+      await this.itemsService.create(item, users[randomIndex]);
+    }
+  }
+
+      SECCION 10 PAGINACIONES ANIDADAS Y FILTROS
+
+Por defecto vamos a tener 10 items por página, aunque vamos a poder elegir esa cantidad e incluso cuantos traer(propiedades limit y offset).También podremos buscar por filtros(search:"rice" me traera solo los resultados con esa palabra)
+También paginaremos los usuarios,no sólo los items.De nuevo las paginaciones son algo básico hoy en dia y hay que dominarlas.
+
+En esta sección aprenderemos:
+
+1- Paginaciones
+2- Búsquedas por nombre
+3- Página y buscar de forma simultánea
+4- Paginar y buscar por items dentro de usuarios
+5- Aplicar los filtros a la hora de consultar los items de los usuarios.
+
+      VIDEO 120 PAGINAR RESULTADOS EN NEST + GRAPHQL -@Args
+
+IMPORTANTE: dado que la paginacion es algo comun a todo, y no solo a items o users normalmente irá en el módulo 'common'(nest g module common)
+Además creo la carpeta dto y su subcarpeta args, alli ya creo el file pagination.args.ts.
+
+Fijate que hasta ahora no habia visto dar un valor por defecto a un @ArgsType o @InputType pero puedo hacerlo.Además fijate que tienen valores minimos coherentes:
+
+import { ArgsType, Field, Int } from '@nestjs/graphql';
+import {
+  IsOptional,
+  IsPositive,
+  Min
+} from 'class-validator';
+
+@ArgsType()
+export class PaginationArgs {
+
+  @Field(() => Int, { nullable: true, description: 'starting index' })
+  @IsOptional()
+  @Min(0)
+  offset: number = 0;
+  
+  @IsPositive()
+  @IsOptional()
+  @Min(1)
+  @Field(type => Int, { nullable: true,description: 'number of items' })
+  limit: number = 10;
+}
+
+Todo superclaro y muy útil.Ojo con el @IsPositive que el 0 no lo es.
+Si ahora vamos a la query que trae todos los items puedo tipar los args con este nuevo tipo y si no mando nada veré por consola los valores por defecto(fijate que no necesité importar el módulo common en item)
+
+      VIDEO 120 APLICANDO LA PAGINACION
+
+Turno de parametrizar la query con estos valores.Realmente solo tengo que usar las propiedades skip y take del ORM:
+
+  async findAll(user: User, paginationArgs: PaginationArgs): Promise<Item[]> {
+    // fijate que estas dos propiedades siempre van a tner un valor
+    const { limit, offset } = paginationArgs;
+    return await this.itemsRepository.find({
+      relations: ['user'],
+      where: {
+        user: {
+          id: user.id,
+        },
+      },
+      skip: offset,
+      take: limit,
+    });
+  }
+
+  Si ahora hago una query con el limit de 2 y el offset de 5 por ejemplo, me saltará los primeros 5 y tomará dos.Fijate que si voy al getAllUsers no puedo ni siquiera insertar estos valores,obviamente solo he modificado el resolver del caso de uso de getAllItems
+
+      VIDEO 122 MULTIPLE ARGS -BUSQUEDAS POR NOMBRE
+
+Queremos incluso filtrar por una palabra, y que traiga los registros basandose en el limit, el offset y este nuevo searchParamString.
+
+Si bien podria parecer que la solución es agregar una nueva propiedad a la clase PaginationArgs realmente el search no tiene nada que ver con una paginación,asi que lo mejor es usar dos argumentos.
+
+Creamo un file en src/common/dto/args/search.args.ts:
+@ArgsType()
+export class SearchArgs {
+  @Field((type) => String, { nullable: true })
+  @IsOptional()
+  @IsString()
+  search?: string;
+}
+
+NOTA: para usar multiples argumentos simplemente uso otro decorador @Args(uno por cada argumento).No puede ser más fácil
+
+  @Query(() => [Item], { name: 'getAllItems' })
+  findAll(
+    @CurrentUser() user: User,
+    @Args() paginationArgs: PaginationArgs,
+    @Args() searchArgs: SearchArgs,
+  ): Promise<Item[]> {
+    // es async pero es la funcion wrapper a esta llamada solo,asinto.La llamada al metodo findAll no va con async ni ostias.Importanting de cojones,
+    return this.itemsService.findAll(user,paginationArgs,searchArgs);
+  }
+
+IMPORTANTE: en este punto tenemos que ir al main y desactivar la propiedad 'forbidNonWhiteListed'.Esta propiedad impide que se mande data adicional y va a fallar con multiples @Args pues solo va a coger uno:
+
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      // forbidNonWhitelisted: true, <- COMENTAR O BORRAR
+    }),
+  );
+
+TIP: en este punto podria haber alguna solucion que no sea desactivar el pipe global(fijate en el app.useGlobalPipes) al completo sino hacerlo solo en ese resolver.
+NOTA: tampoco es tan importante desactivarlo, ya que GraphQL es bastante bueno de por si con lo que no existe/datos extra
+
+      VIDEO 123 APLICAR LA BUSQUEDA POR NOMBRE
+
+      

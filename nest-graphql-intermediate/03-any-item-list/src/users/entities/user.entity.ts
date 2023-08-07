@@ -1,9 +1,11 @@
 import { ObjectType, Field, Int, ID } from '@nestjs/graphql';
+import { Item } from 'src/items/entities/item.entity';
 import {
   Column,
   Entity,
   JoinColumn,
   ManyToOne,
+  OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
@@ -35,15 +37,20 @@ export class User {
   @Column({ type: 'boolean', default: true })
   @Field(() => Boolean)
   isActive: boolean;
-  
-  @ManyToOne(type => User, (user) => user.lastUpdateBy, { 
+
+  // el mismo usuario puede modificar muchas veces a éste
+  @ManyToOne((type) => User, (user) => user.lastUpdateBy, {
     nullable: true,
     // en este caso el eager no funciona por que para que funcione tiene que ser de una tabla a otra,en este caso es de una tabla a la misma(y hace dependencia circular y se lia)
     // eager:true
-    lazy:true
-   })
-  @JoinColumn({name:'lastUpdateBy'})
+    lazy: true,
+  })
+  @JoinColumn({ name: 'lastUpdateBy' })
   // hasta aqui sería suficiente para typeorm(decoradores @ManyToOne y @JoinColumn).Puede ser nulo pues mientras no se haga un update lo es
   @Field(() => User, { nullable: true })
   lastUpdateBy?: User;
+
+  @OneToMany((type) => Item, (item) => item.user, { lazy: true })
+  @Field(() => [Item])
+  items: Item[];
 }

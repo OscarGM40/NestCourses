@@ -2,13 +2,6 @@
 # THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
 # ------------------------------------------------------
 
-type Item {
-  id: String!
-  name: String!
-  quantity: Float!
-  measureUnit: String
-}
-
 type User {
   id: ID!
   fullName: String!
@@ -16,6 +9,15 @@ type User {
   roles: [String!]!
   isActive: Boolean!
   lastUpdateBy: User
+  items: [Item!]!
+  itemCount: Int!
+}
+
+type Item {
+  id: String!
+  name: String!
+  quantityUnits: String
+  user: User!
 }
 
 type AuthResponse {
@@ -27,7 +29,14 @@ type Query {
   revalidateJWT: AuthResponse!
   getAllUsers(roles: [ValidRoles!] = []): [User!]!
   getOneUserById(id: ID!): User!
-  getAllItems: [Item!]!
+  getAllItems(
+    """starting index"""
+    offset: Int = 0
+
+    """number of items"""
+    limit: Int = 10
+    search: String
+  ): [Item!]!
   getOneItemByID(id: ID!): Item!
 }
 
@@ -45,6 +54,9 @@ type Mutation {
   createItem(createItemInput: CreateItemInput!): Item!
   updateItem(updateItemInput: UpdateItemInput!): Item!
   removeItem(id: ID!): Item!
+
+  """ejecuta la construcción de la base de datos"""
+  executeSeed: Boolean!
 }
 
 input SignupInput {
@@ -83,14 +95,12 @@ input UpdateUserInput {
 input CreateItemInput {
   """name of the item"""
   name: String!
-  quantity: Float!
-  measureUnit: String
+  quantityUnits: String
 }
 
 input UpdateItemInput {
   """name of the item"""
   name: String
-  quantity: Float
-  measureUnit: String
+  quantityUnits: String
   id: ID!
 }

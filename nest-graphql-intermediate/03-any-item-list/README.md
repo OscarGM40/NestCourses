@@ -5,28 +5,34 @@
 ## Installation
 
 1. Clonar el proyecto
-2. Copiar el ***.env.template y configurarlo como un .env***
-3. Reconstruir los modulos de node 
+2. Copiar el **_.env.template y configurarlo como un .env_**
+3. Reconstruir los modulos de node
+
 ```bash
 $ yarn install
 ```
 
 ## Running the app
+
 1. Levantar el docker compose
+
 ```bash
 $ docker-compose up -d
 ```
 
 2. Levantar la app
+
 ```bash
 # watch mode
 $ yarn run start:dev
 # production mode
 $ yarn run start:prod
 ```
-3. Recuerda que uedo limpiar el volumen con docker-compose down -v
+
+3. Recuerda que puedo limpiar el volumen con docker-compose down -v
 
 ## Test
+
 ```bash
 # unit tests
 $ yarn run test
@@ -36,4 +42,6 @@ $ yarn run test:e2e
 $ yarn run test:cov
 ```
 
-## El endpoint de GraphQL estará en localhost:3000/graphql
+## El endpoint de GraphQL estará en localhost:3000/graphql por defecto
+
+4. Puedo ejecutar la mutation 'executeSeed' para reiniciar la DB con datos mockeados,siempre que no esté en producción
