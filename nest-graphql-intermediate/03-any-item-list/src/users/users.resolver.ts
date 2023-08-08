@@ -17,6 +17,9 @@ import { User } from './entities/user.entity';
 import { UsersService } from './users.service';
 import { UpdateUserInput } from './dto/update-user.input';
 import { ItemsService } from 'src/items/items.service';
+import { Item } from 'src/items/entities/item.entity';
+import { PaginationArgs } from 'src/common/dto/args/pagination.args';
+import { SearchArgs } from 'src/common/dto/args/search.args';
 
 @Resolver(() => User)
 @UseGuards(JwtAuthGuard)
@@ -24,15 +27,21 @@ export class UsersResolver {
   constructor(
     private readonly usersService: UsersService,
     private readonly itemsService: ItemsService,
-    ) {}
+  ) {}
 
   // recuerda que la diferencia entre los @Args(name:string) y los @Input() es que los INputs vienen como si fuera una petición POST O PUT, es decir,como si fuera el body.Los @Args son más como si fueran query parameters, más como si fuera una petición GET. Desde luego es una explicación un tanto difusa
   @Query(() => [User], { name: 'getAllUsers' })
   findAll(
     @Args() validRoles: ValidRolesArgs,
     @CurrentUser([ValidRoles.admin, ValidRoles.superUser]) user: User,
+    @Args() paginationArgs: PaginationArgs,
+    @Args() searchArgs: SearchArgs,
   ): Promise<User[]> {
-    return this.usersService.findAll(validRoles.roles);
+    return this.usersService.findAll(
+      validRoles.roles,
+      paginationArgs,
+      searchArgs,
+    );
   }
 
   @Query(() => User, { name: 'getOneUserById' })
@@ -65,9 +74,19 @@ export class UsersResolver {
   // con el decorador @ResolveField( type, options?) estamos modificando nuestro esquema y especificando que vamos a tener un nuevo campo que será la resolución de este método
   @ResolveField((type) => Int, { name: 'itemCount' })
   async itemCount(
-    @CurrentUser([ValidRoles.admin]) adminUser:User,
+    @CurrentUser([ValidRoles.admin]) adminUser: User,
     @Parent() user: User,
-    ): Promise<number> {
+  ): Promise<number> {
     return this.itemsService.itemCountByUser(user);
+  }
+
+  @ResolveField((type) => [Item], { name: 'items' })
+  async getItemsByUser(
+    @CurrentUser([ValidRoles.admin]) adminUser: User,
+    @Parent() user: User,
+    @Args() paginationArgs: PaginationArgs,
+    @Args() searchArgs: SearchArgs,
+  ): Promise<Item[]> {
+    return this.itemsService.findAll(user, paginationArgs, searchArgs);
   }
 }

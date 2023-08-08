@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateItemInput, UpdateItemInput } from './dto/inputs';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Item } from './entities/item.entity';
-import { Repository } from 'typeorm';
+import { Like, Repository } from 'typeorm';
 import { User } from 'src/users/entities/user.entity';
 import { PaginationArgs } from 'src/common/dto/args/pagination.args';
 import { SearchArgs } from 'src/common/dto/args/search.args';
@@ -23,19 +23,39 @@ export class ItemsService {
     return await this.itemsRepository.save(newItem);
   }
 
-  async findAll(user: User, paginationArgs: PaginationArgs,searchArgs:SearchArgs): Promise<Item[]> {
+  async findAll(
+    user: User,
+    paginationArgs: PaginationArgs,
+    searchArgs: SearchArgs,
+  ): Promise<Item[]> {
     // fijate que estas dos propiedades siempre van a tner un valor
     const { limit, offset } = paginationArgs;
-    return await this.itemsRepository.find({
+    const { search } = searchArgs;
+    console.log({search})
+    // rye bread= pan de centeno
+/*     return await this.itemsRepository.find({
       relations: ['user'],
       where: {
         user: {
           id: user.id,
         },
+        name: Like(`%${search}%`) 
       },
       skip: offset,
       take: limit,
-    });
+    }); */
+
+    const queryBuilder = this.itemsRepository
+      .createQueryBuilder()
+      .take(limit)
+      .skip(offset)
+      // ojo que el campo es item.user.id
+      .where(`"userId" = :userId`, {userId: user.id})
+      // .setParameter('userId',user.id) <- otra forma
+      if(search){
+        queryBuilder.andWhere('LOWER(name) like :name',{name:`%${search.toLowerCase()}%`})
+      }
+      return queryBuilder.getMany();
   }
 
   async findOne(id: string, user: User): Promise<Item> {

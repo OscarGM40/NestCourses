@@ -9,9 +9,11 @@ import { UpdateUserInput } from './dto/update-user.input';
 import { User } from './entities/user.entity';
 import { SignupInput } from '../auth/dto/inputs/SignUp.input';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Like, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { ValidRoles } from 'src/auth/enums/valid-roles.enum';
+import { PaginationArgs } from 'src/common/dto/args/pagination.args';
+import { SearchArgs } from 'src/common/dto/args/search.args';
 
 @Injectable()
 export class UsersService {
@@ -38,21 +40,38 @@ export class UsersService {
     }
   }
 
-  async findAll(roles: ValidRoles[]): Promise<User[]> {
+  async findAll(
+    roles: ValidRoles[],
+    paginationArgs: PaginationArgs,
+    searchArgs: SearchArgs,
+  ): Promise<User[]> {
+    const { limit, offset } = paginationArgs;
+    const { search } = searchArgs;
+    console.log(search);
+    console.log({ roles });
     // si no vienen roles devolvemos todos los users.Fijate que ahora tengo que decir que se cargen las relaciones
     if (roles.length === 0)
-      return await this.usersRepository
-        .find
-        // ya no es necesario por el lazy a true de la Entidad
-        // { relations:{ lastUpdateBy:true } }
-        ();
+      return await this.usersRepository.find({
+        take: limit,
+        skip: offset,
+        where: {
+          fullName: Like(`%${search}%`),
+        },
+      });
+    // ya no es necesario por el lazy a true de la Entidad
+    // { relations:{ lastUpdateBy:true } }
     return (
       this.usersRepository
         .createQueryBuilder('User') // <- es un alias cualquiera
         // realmente nos valia con where() pero asi vemos otra forma
         // ARRAY[name] contains ARRAY[:...parameter] <- porque es un parametro
+        .take(limit)
+        .skip(offset)
         .andWhere('ARRAY[roles] && ARRAY[:...roles]')
         .setParameter('roles', roles) // necesario,evita SQL injection
+        .andWhere('"fullName" like :fullName', {
+          fullName: `%${search}%`,
+        })
         .getMany()
     );
   }

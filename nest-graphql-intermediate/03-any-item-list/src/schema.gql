@@ -9,8 +9,15 @@ type User {
   roles: [String!]!
   isActive: Boolean!
   lastUpdateBy: User
-  items: [Item!]!
   itemCount: Int!
+  items(
+    """starting index"""
+    offset: Int = 0
+
+    """number of items"""
+    limit: Int = 10
+    search: String
+  ): [Item!]!
 }
 
 type Item {
@@ -27,7 +34,16 @@ type AuthResponse {
 
 type Query {
   revalidateJWT: AuthResponse!
-  getAllUsers(roles: [ValidRoles!] = []): [User!]!
+  getAllUsers(
+    roles: [ValidRoles!] = []
+
+    """starting index"""
+    offset: Int = 0
+
+    """number of items"""
+    limit: Int = 10
+    search: String
+  ): [User!]!
   getOneUserById(id: ID!): User!
   getAllItems(
     """starting index"""

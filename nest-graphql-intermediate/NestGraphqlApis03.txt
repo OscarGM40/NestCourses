@@ -366,4 +366,106 @@ NOTA: tampoco es tan importante desactivarlo, ya que GraphQL es bastante bueno d
 
       VIDEO 123 APLICAR LA BUSQUEDA POR NOMBRE
 
-      
+Sugerencia, cuando ya tenga más de tres argumentos en un método o función es buena idea crear un objeto(si que libramos)
+Bien, para poder hacer el like TypeORM expone el método Like().Sin embargo no cumple con toda la funcionalidad que queremos(ya que no hace busqueda insensitiva y Ttiene algun handicap más como que search puede ser undefined y no hay que aplicarlo siempre):
+
+  const { search } = searchArgs;
+    // rye bread= pan de centeno
+    return await this.itemsRepository.find({
+      relations: ['user'],
+      where: {
+        user: {
+          id: user.id,
+        },
+        name: Like(`%${search}%`) 
+      },
+      skip: offset,
+      take: limit,
+    });
+
+  En este punto vamos a usar un QueryBuilder,ya que además el find se nos está yendo de las manos y tiene problemas(además el Like evitaría que el campo sea indexado,se lo saltaría)
+
+        VIDEO 125 USANDO UN QUERY BUILDER PARA EL FILTRO
+
+Realmente es simplemente cambiar la sintaxis,aunque haciendolo asi si funciona bien y trae todo:
+
+   const queryBuilder = this.itemsRepository
+      .createQueryBuilder('Item')
+      .take(limit)
+      .skip(offset)
+      .where(`"userId" = :userId`, {userId:user.id})
+      // .setParameter('userId',user.id) <- otra forma
+
+      if(search){
+        queryBuilder.andWhere('LOWER(name) like :name',{name:`%${search.toLowerCase()}%`})
+      }
+      return queryBuilder.getMany();
+
+      VIDEO 126 APLICAR FILTROS A SUB-CAMPOS
+
+Lo primero que vamos a hacer es que el campo items (en user.items) lo vamos a montar con un ResolveField,luego lo comentamos:
+
+  @OneToMany((type) => Item, (item) => item.user, { lazy: true })
+  // @Field(() => [Item])
+  items: Item[];
+
+  Obviamenet ahora el getAll ya no va a traer items.El nuevo @ResolveField será asi:
+
+    @ResolveField((type) => [Item], { name: 'items' })
+  async getItemsByUser(
+    @CurrentUser([ValidRoles.admin]) adminUser: User,
+    @Parent() user: User,
+    @Args() paginationArgs: PaginationArgs,
+    @Args() searchArgs: SearchArgs,
+  ): Promise<Item[]> {
+    return this.itemsService.findAll(user, paginationArgs, searchArgs);
+  }
+
+  NOTA: fijate que en GraphQL un arreglo lo defino asi [Item] y en TS asi ITem[].No confundir las instrucciones que son para GraphQL con las que son de TS
+
+  Ahora puedo hacer cosas tan chulas como pedir los users y paginar sus items:
+
+
+query GetAllUsers($roles: [ValidRoles!], $getOneUserByIdId: ID!) {
+  getAllUsers(roles: $roles) {
+    fullName
+    email
+    roles
+    isActive
+    lastUpdateBy {
+      fullName
+      email
+    }
+    itemCount
+    items(search:"rice") {
+      name
+      quantityUnits
+    }
+  }
+}
+
+Fijate que el lazy a true en la entidad es lo que hace posible todo esto(más el @ResolveField para los items).Superinteresante
+De echo lo puedo hacer en el getOne tmb por lo mismo(lazy a true en la entidad y el ResolveField)No es algo exclusivo del getAll
+Es en estos puntos donde se ve el poder de complicarse al usar GraphQL con un ORM con TS y mierdas asi
+
+    SECCION 11 ENTIDAD PARA EL MANEJO DE LISTAS MAESTRO DETALLE
+
+Rye bread=pan de centeno
+Lean ground beef=carne(beef ) picada(ground) magra(lean)
+Fish filets=filetes de pescado
+Vamos a crear listas de productos como última entidad.
+
+Esta sección es técnicamente la más enredada hasta el momento, porque vamos a manejar una tabla que es enteramente relacional con otras tablas para manejar las listas y los items de sus listas, que a su vez, tienen una relación con los items de nuestra base de datos.
+
+Puntualmente veremos:
+1- Relaciones
+2- Maestro detalles
+3- SEEDs
+4- Constraints
+5- Filtros, paginar y conteo
+6- Actualizar elementos
+7- Actualizaciones con query builders
+8- Y más
+
+
+

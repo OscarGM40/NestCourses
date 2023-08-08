@@ -30,7 +30,7 @@ export class ItemsResolver {
     @Args() searchArgs: SearchArgs,
   ): Promise<Item[]> {
     // es async pero es la funcion wrapper a esta llamada solo,asinto.La llamada al metodo findAll no va con async ni ostias.Importanting de cojones,
-    return this.itemsService.findAll(user,paginationArgs,searchArgs);
+    return this.itemsService.findAll(user, paginationArgs, searchArgs);
   }
 
   @Query(() => Item, { name: 'getOneItemByID' })
